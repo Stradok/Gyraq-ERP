@@ -104,7 +104,7 @@ export function CashChart({ data, min, height = 280 }: { data: { label: string; 
 export function Waterfall({ steps, height = 260 }: { steps: { label: string; value: number; total?: boolean }[]; height?: number }) {
   let run = 0;
   const data = steps.map((s) => {
-    if (s.total) { run = s.value; return { label: s.label, base: 0, up: s.value, down: 0, total: s.value }; }
+    if (s.total) { run = s.value; return { label: s.label, base: 0, up: 0, down: 0, total: s.value }; }
     const start = run; run += s.value;
     return { label: s.label, base: Math.min(start, run), up: s.value > 0 ? s.value : 0, down: s.value < 0 ? -s.value : 0, total: 0 };
   });
