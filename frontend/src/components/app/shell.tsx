@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Logo } from "./logo";
 import { Notifications } from "./notifications";
 import { CommandPalette } from "./command-palette";
+import { AssistantDock } from "./assistant-dock";
 import { NAV, titleFor } from "@/lib/nav";
 import { PERSONAS, ROLE_MODULES, canSee } from "@/lib/rbac";
 import { useERP } from "@/lib/store";
@@ -226,6 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
       <CommandPalette open={open} setOpen={setOpen} />
+      <AssistantDock />
     </div>
   );
 }

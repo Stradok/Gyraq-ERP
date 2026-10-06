@@ -9,7 +9,7 @@ import { Bars, CashChart, Waterfall } from "@/components/charts/charts";
 import { AiChip } from "./ai";
 import { RiskBadge } from "./status";
 import type { Proposal, ToolUI } from "@/lib/ai/tools";
-import { createPOFromRecommendation } from "@/lib/actions";
+import { createPOFromRecommendation, recordPayment } from "@/lib/actions";
 import { idx, recommendations } from "@/lib/data/queries";
 import { money, moneyM, num } from "@/lib/format";
 import { useERP } from "@/lib/store";
@@ -50,6 +50,10 @@ export function useProposalExec() {
       addAudit({ id: `au_new_${Date.now()}`, at: new Date().toISOString(), actor, action: "ai_proposal.confirmed", entity: "Customer", ref: c.name, source: "ai_proposal", detail: "Confirmed AI-proposed credit hold; sent for approval" });
       toast.success("Credit hold sent for approval", { description: c.name });
       return { ok: true, href: "/approvals" };
+    }
+    if (p.command === "RecordPayment") {
+      const pay = recordPayment({ customerId: String(p.params.customerId), amount: Number(p.params.amount), method: p.params.method as "bank_transfer" | "cash" | "cheque" | "pdc" });
+      return { ok: true, href: `/customers/${pay.customerId}` };
     }
     return { ok: false };
   };
@@ -112,6 +116,7 @@ export function ToolResultView({ ui }: { ui: ToolUI }) {
         </div>
       </div>
     );
+    case "navigate": return <div className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs text-muted-foreground"><Check className="size-3.5 text-success" />Opened <Link href={ui.path} className="font-mono text-foreground hover:text-primary">{ui.label}</Link></div>;
     case "none": return <div className="rounded-lg border border-dashed px-3 py-2 text-[13px] text-muted-foreground">{ui.reason}</div>;
   }
 }

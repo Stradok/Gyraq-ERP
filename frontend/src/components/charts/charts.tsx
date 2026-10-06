@@ -52,7 +52,7 @@ export function Bars({ data, xKey, series, height = 220, stacked, fmt = moneyM, 
         {v ? (
           <>
             <XAxis type="number" tick={AXIS} tickLine={false} axisLine={false} tickFormatter={fmt} />
-            <YAxis type="category" dataKey={xKey} tick={AXIS} tickLine={false} axisLine={false} width={110} tickFormatter={xFmt} />
+            <YAxis type="category" dataKey={xKey} tick={AXIS} tickLine={false} axisLine={false} interval={0} width={110} tickFormatter={xFmt} />
           </>
         ) : (
           <>

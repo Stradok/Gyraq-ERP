@@ -2,14 +2,14 @@
 // plus a `ui` payload for rendering. Propose-tools never write: they return a proposal a human must confirm.
 // Runs on the server (LLM mode) and in the browser (computed mode) with identical behaviour.
 import { z } from "zod";
-import { arAging, cashProjection, customerStats, getDB, idx, insights, profitVariance, recommendations, salesBy, stockRows, supplierStats } from "../data/queries";
+import { arAging, cashProjection, customerStats, getDB, idx, insights, pl, profitVariance, recommendations, salesBy, stockRows, supplierStats } from "../data/queries";
 import { addDays } from "../data/dates";
 import { filterCustomers, customerRows, type CustomerFilter } from "../nl";
 import { ORG } from "../data/catalog";
 
 export interface CustomerLite { id: string; name: string; city: string; outstanding: number; overdue: number; maxDays: number; risk: number; band: string; bounces: number }
 export interface Proposal {
-  id: string; command: "CreatePurchaseOrder" | "PlaceCreditHold" | "SendMessage"; title: string; lines: [string, string][]; consequence: string;
+  id: string; command: "CreatePurchaseOrder" | "PlaceCreditHold" | "SendMessage" | "RecordPayment"; title: string; lines: [string, string][]; consequence: string;
   params: Record<string, string | number>;
 }
 export type ToolUI =
@@ -21,6 +21,7 @@ export type ToolUI =
   | { kind: "cash"; weeks: { label: string; closing: number }[]; min: number }
   | { kind: "proposal"; proposal: Proposal }
   | { kind: "draft"; customerId: string; customer: string; channel: "WhatsApp" | "Email"; text: string }
+  | { kind: "navigate"; path: string; label: string }
   | { kind: "none"; reason: string };
 export interface ToolResult { summary: string; ui: ToolUI; records?: { type: string; id: string; label: string; href: string }[]; metrics?: { label: string; value: string }[] }
 
@@ -138,6 +139,56 @@ export const TOOLS = {
       if (!s) return { summary: "No supplier found.", ui: { kind: "none", reason: `No supplier named “${a.name}”.` } };
       const st = supplierStats(s.id);
       return { summary: `${s.name}: spend 12m ${M(st.spend12m)}, payable ${M(st.payable)}, avg lead ${st.avgLead.toFixed(1)}d (promised ${s.leadTimeDays}), on-time ${st.reliability.toFixed(0)}%, ${st.exceptions} bills with issues.`, ui: { kind: "metrics", items: [{ label: "Spend (12m)", value: M(st.spend12m) }, { label: "Payable", value: M(st.payable) }, { label: "Avg lead time", value: `${st.avgLead.toFixed(0)} days` }, { label: "On-time", value: `${st.reliability.toFixed(0)}%` }] }, records: [{ type: "Supplier", id: s.id, label: s.name, href: `/suppliers/${s.id}` }] };
+    },
+  },
+  get_revenue: {
+    description: "Revenue, gross profit and margin between two dates (YYYY-MM-DD), optionally grouped by month, customer, product, category, region or rep. Use for 'show revenue from X to Y'.",
+    input: z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), groupBy: z.enum(["month", "customer", "product", "category", "region", "rep"]).optional() }),
+    run(a: { from: string; to: string; groupBy?: "month" | "customer" | "product" | "category" | "region" | "rep" }): ToolResult {
+      const db = getDB();
+      if (a.from > a.to) return { summary: "from is after to.", ui: { kind: "none", reason: "The start date is after the end date." } };
+      const from = a.from < db.start ? db.start : a.from, to = a.to > db.today ? db.today : a.to;
+      const p = pl(from, to);
+      const note = from !== a.from || to !== a.to ? ` (clamped to available data ${from} to ${to})` : "";
+      const { cus, prod, emp } = idx();
+      let ui: ToolUI = { kind: "metrics", items: [{ label: "Revenue", value: M(p.revenue) }, { label: "Gross profit", value: M(p.grossProfit) }, { label: "Gross margin", value: `${p.gm.toFixed(1)}%` }, { label: "Net profit", value: M(p.netProfit) }] };
+      let extra = "";
+      if (a.groupBy === "month") {
+        const m = new Map<string, number>();
+        for (const i of db.invoices) if (i.date >= from && i.date <= to) m.set(i.date.slice(0, 7), (m.get(i.date.slice(0, 7)) ?? 0) + i.subtotal - i.discount);
+        const rows = [...m].sort((x, y) => x[0].localeCompare(y[0]));
+        ui = { kind: "bars", title: `Revenue by month, ${from} to ${to}`, money: true, data: rows.map(([label, value]) => ({ label, value: Math.round(value) })) };
+        extra = " By month: " + rows.map(([k, v]) => `${k} ${M(v)}`).join("; ");
+      } else if (a.groupBy) {
+        const key = { customer: (i: { customerId: string }) => cus.get(i.customerId)!.name, region: (i: { customerId: string }) => cus.get(i.customerId)!.city, rep: (i: { customerId: string }) => emp.get(cus.get(i.customerId)!.repId)?.name ?? "—", product: (_: unknown, l: { productId: string }) => prod.get(l.productId)!.name, category: (_: unknown, l: { productId: string }) => prod.get(l.productId)!.category.replace(/_/g, " ") }[a.groupBy];
+        const rows = [...(salesBy(from, to, key as never) as Map<string, { revenue: number }>)].map(([k, v]) => [k, v.revenue] as const).sort((x, y) => y[1] - x[1]).slice(0, 10);
+        ui = { kind: "bars", title: `Revenue by ${a.groupBy}, ${from} to ${to}`, money: true, data: rows.map(([label, value]) => ({ label, value: Math.round(value) })) };
+        extra = ` Top ${a.groupBy}: ` + rows.slice(0, 5).map(([k, v]) => `${k} ${M(v)}`).join("; ");
+      }
+      return { summary: `${from} to ${to}${note}: revenue ${M(p.revenue)}, gross profit ${M(p.grossProfit)} (${p.gm.toFixed(1)}%), net profit ${M(p.netProfit)}.${extra}`, ui, metrics: [{ label: `Revenue ${from} → ${to}`, value: M(p.revenue) }], records: [{ type: "Report", id: "pnl", label: "Profit & loss", href: "/finance/statements" }] };
+    },
+  },
+  open_page: {
+    description: "Navigate the user's screen to an ERP page, optionally with filters or a date range. Allowed paths: /overview /sales/orders /sales/invoices /sales/payments /sales/quotes /customers /inventory /inventory/replenishment /inventory/stock /purchasing/orders /purchasing/bills /finance/statements /finance/cashflow /finance/receivables /finance/payables /finance/journal /approvals /expenses /warehouses /suppliers /reports/<id>. Report ids: sales-by-customer, sales-by-product, sales-by-region, sales-by-rep, gross-margin, inventory-valuation, stock-movement, purchase-analysis, supplier-performance. Params: reports accept from & to (YYYY-MM-DD); /customers accepts overdue=1, city, minBalance, minDays, band; /sales/orders and /sales/invoices accept status.",
+    input: z.object({ path: z.string(), params: z.record(z.string(), z.string()).optional(), label: z.string().optional() }),
+    run(a: { path: string; params?: Record<string, string>; label?: string }): ToolResult {
+      const ok = /^\/(overview|sales\/(orders|invoices|payments|quotes|returns|leads)|customers|inventory(\/(replenishment|stock|expiry))?|purchasing\/(orders|bills|receipts|payments)|finance\/(statements|cashflow|receivables|payables|journal|reconciliation|tax)|approvals|expenses|warehouses|suppliers|employees|reports(\/[a-z-]+)?)$/.test(a.path);
+      if (!ok) return { summary: `Path ${a.path} is not available.`, ui: { kind: "none", reason: `I can't open ${a.path}.` } };
+      const q = new URLSearchParams(a.params ?? {}).toString();
+      const path = q ? `${a.path}?${q}` : a.path;
+      return { summary: `Opened ${path} on the user's screen.`, ui: { kind: "navigate", path, label: a.label ?? path } };
+    },
+  },
+  propose_record_payment: {
+    description: "Propose recording a customer payment (allocated to oldest invoices). A human must confirm.",
+    input: z.object({ customerName: z.string().min(2), amount: z.number().positive(), method: z.enum(["bank_transfer", "cash", "cheque", "pdc"]).default("bank_transfer") }),
+    run(a: { customerName: string; amount: number; method: "bank_transfer" | "cash" | "cheque" | "pdc" }): ToolResult {
+      const c = idx().db.customers.find((x) => x.name.toLowerCase().includes(a.customerName.toLowerCase()));
+      if (!c) return { summary: "No customer found.", ui: { kind: "none", reason: `No customer named “${a.customerName}”.` } };
+      const s = customerStats(c.id);
+      if (a.amount > s.outstanding + 0.5) return { summary: `Amount exceeds outstanding ${M(s.outstanding)}.`, ui: { kind: "none", reason: `${c.name} owes ${M(s.outstanding)}; ${M(a.amount)} is more than that.` } };
+      const p: Proposal = { id: `prop_pay_${c.id}_${a.amount}`, command: "RecordPayment", title: `Record payment: ${c.name}`, lines: [["Customer", c.name], ["Amount", M(a.amount)], ["Method", a.method.replace("_", " ")], ["Outstanding before", M(s.outstanding)]], consequence: "Allocated to the oldest open invoices first. Posts Dr Bank / Cr Trade Debtors.", params: { customerId: c.id, amount: a.amount, method: a.method } };
+      return { summary: `Proposal ready: record ${M(a.amount)} from ${c.name}. Awaiting confirmation.`, ui: { kind: "proposal", proposal: p } };
     },
   },
   propose_purchase_order: {

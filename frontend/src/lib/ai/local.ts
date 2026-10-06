@@ -91,6 +91,19 @@ export function answerLocal(q: string, prevTopic?: string): LocalAnswer {
     return mk("anomalies", [{ tool: "get_anomalies", args: {} }], (r) => r[0]!.summary.split(" | ").map((x) => `- ${x}`).join("\n") + "\n\nOpen the items below to review them.");
   }
 
+  const dr = s.match(/revenue.*?(?:from\s+)?(\d{4}-\d{2}-\d{2})\s+(?:to|until|-)\s+(\d{4}-\d{2}-\d{2})/);
+  if (dr || /revenue.*(this month|last month|last \d+ days)/.test(s)) {
+    const t = getDB().today;
+    let from = dr?.[1] ?? addDays(t, -29), to = dr?.[2] ?? t;
+    if (/last month/.test(s)) { const d = new Date(Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 2, 1)); from = d.toISOString().slice(0, 10); to = addDays(`${t.slice(0, 7)}-01`, -1); }
+    else if (/this month/.test(s)) from = `${t.slice(0, 7)}-01`;
+    else { const n = s.match(/last (\d+) days/); if (n) from = addDays(t, -(+n[1]! - 1)); }
+    const groupBy = /by (month|customer|product|category|region|rep)/.exec(s)?.[1] as "month" | "customer" | "product" | "category" | "region" | "rep" | undefined;
+    const steps: Step[] = [{ tool: "get_revenue", args: { from, to, groupBy } }, { tool: "open_page", args: { path: "/reports/sales-by-customer", params: { from, to } } }];
+    const results = steps.map((st) => runTool(st.tool, st.args));
+    return { status: "answered", steps, results, topic: "revenue", text: `${results[0]!.summary} I've opened the sales-by-customer report for the same dates.` };
+  }
+
   const stockQ = s.match(/(?:how (?:much|many)|stock of|do we have)\s+(.{3,40}?)(?:\s+(?:do we have|in stock|left|available)|\?|$)/);
   if (stockQ && /stock|have|left|available|how (much|many)/.test(s)) {
     return mk("stock", [{ tool: "get_stock_position", args: { product: stockQ[1]!.trim() } }], (r) => r[0]!.summary.split("; ").slice(0, 4).join("\n- ").replace(/^/, "- "));
