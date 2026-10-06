@@ -32,6 +32,7 @@ interface Props<T> {
   rows: T[];
   cols: Col<T>[];
   rowKey: (r: T) => string;
+  rowFilter?: (r: T) => boolean;
   searchText?: (r: T) => string;
   searchPlaceholder?: string;
   initialSearch?: string;
@@ -68,7 +69,7 @@ export function DataTable<T>(p: Props<T>) {
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    let out = rows;
+    let out = p.rowFilter ? rows.filter(p.rowFilter) : rows;
     if (needle && p.searchText) out = out.filter((r) => p.searchText!(r).toLowerCase().includes(needle));
     for (const f of p.filters ?? []) { const v = fv[f.id]; if (v && v !== "all") out = out.filter((r) => f.test(r, v)); }
     if (sort) {
@@ -80,7 +81,7 @@ export function DataTable<T>(p: Props<T>) {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, q, fv, sort]);
+  }, [rows, q, fv, sort, p.rowFilter]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const cur = Math.min(page, pages - 1);

@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   if (!aiEnabled()) return Response.json({ error: "AI provider not configured" }, { status: 503 });
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
   if (limited(ip)) return Response.json({ error: "Too many requests. Please wait a moment." }, { status: 429 });
-  const body = (await req.json()) as { messages: UIMessage[]; user?: { name: string; title: string } };
+  const body = (await req.json()) as { messages: UIMessage[]; user?: { name: string; title: string }; page?: string };
   const messages = body.messages.slice(-12);
   const tools = Object.fromEntries((Object.keys(TOOLS) as ToolName[]).map((name) => [name, tool({
     description: TOOLS[name].description,
@@ -31,10 +31,10 @@ export async function POST(req: Request) {
   })]));
   const result = streamText({
     model: getModel(COMMAND_CENTER.tier),
-    system: COMMAND_CENTER.system(body.user ?? { name: "the user", title: "Manager" }, todayPK()),
+    system: COMMAND_CENTER.system(body.user ?? { name: "the user", title: "Manager" }, todayPK(), body.page),
     messages: await convertToModelMessages(messages),
     tools,
-    stopWhen: stepCountIs(6),
+    stopWhen: stepCountIs(8),
     temperature: COMMAND_CENTER.temperature,
     timeout: 45_000,
   });

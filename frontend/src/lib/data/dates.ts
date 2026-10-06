@@ -38,3 +38,29 @@ export function fiscalQuarter(d: ISODate) {
   const q = Math.floor(((m + 5) % 12) / 3) + 1; // Jul–Sep = Q1
   return `Q${q} ${fiscalYear(d).label}`;
 }
+
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+/** Natural-language period → inclusive date range. Weeks start Monday; quarters follow the Jul–Jun fiscal year. */
+export function resolvePeriod(phrase: string, today: ISODate): { from: ISODate; to: ISODate; label: string } | null {
+  const s = phrase.toLowerCase().trim();
+  const dow = (weekday(today) + 6) % 7; // Mon=0
+  const monthStartOf = (back: number) => { const d = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1 - back, 1)); return toISO(d.getTime()); };
+  const r = (from: ISODate, to: ISODate, label: string) => ({ from, to: to > today ? today : to, label });
+  if (/\btoday\b/.test(s)) return r(today, today, "today");
+  if (/yesterday/.test(s)) return r(addDays(today, -1), addDays(today, -1), "yesterday");
+  if (/last week|previous week/.test(s)) { const mon = addDays(today, -dow - 7); return r(mon, addDays(mon, 6), "last week (Mon–Sun)"); }
+  if (/this week/.test(s)) return r(addDays(today, -dow), today, "this week (Mon to today)");
+  if (/last month|previous month/.test(s)) return r(monthStartOf(1), addDays(monthStartOf(0), -1), "last month");
+  if (/this month|month to date|mtd/.test(s)) return r(monthStartOf(0), today, "this month to date");
+  const q = (back: number) => { const m = +today.slice(5, 7), fyStart = m >= 7 ? +today.slice(0, 4) : +today.slice(0, 4) - 1; const qi = Math.floor(((m + 5) % 12) / 3) - back; const yOff = Math.floor(qi / 4), qq = ((qi % 4) + 4) % 4; const sm = 6 + qq * 3; const from = toISO(Date.UTC(fyStart + yOff, sm, 1)); const to = toISO(Date.UTC(fyStart + yOff, sm + 3, 0)); return r(from, to, `Q${qq + 1} FY${String(fyStart + yOff).slice(2)}-${String(fyStart + yOff + 1).slice(2)}`); };
+  if (/last quarter|previous quarter/.test(s)) return q(1);
+  if (/this quarter|current quarter/.test(s)) return q(0);
+  const fy = fiscalYear(today);
+  if (/last (fiscal )?(year|fy)|previous (fiscal )?(year|fy)/.test(s) && /fiscal|fy/.test(s)) return r(addDays(fy.start, -365).slice(0, 4) + "-07-01", fy.start.slice(0, 4) + "-06-30", "last fiscal year");
+  if (/(this )?(fiscal year|fy)|year to date|ytd/.test(s)) return r(fy.start, today, `${fy.label} to date`);
+  const n = s.match(/last (\d+) (day|week|month)s?/);
+  if (n) { const k = +n[1]!; return r(addDays(today, -(n[2] === "day" ? k - 1 : n[2] === "week" ? k * 7 - 1 : k * 30 - 1)), today, `last ${k} ${n[2]}s`); }
+  const mi = MONTHS.findIndex((m) => s.includes(m));
+  if (mi >= 0) { const yr = +(s.match(/\b(20\d\d)\b/)?.[1] ?? (mi + 1 > +today.slice(5, 7) ? +today.slice(0, 4) - 1 : +today.slice(0, 4))); const from = toISO(Date.UTC(yr, mi, 1)); return r(from, toISO(Date.UTC(yr, mi + 1, 0)), `${MONTHS[mi]} ${yr}`); }
+  return null;
+}

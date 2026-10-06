@@ -116,6 +116,9 @@ export function ToolResultView({ ui }: { ui: ToolUI }) {
         </div>
       </div>
     );
+    case "guide": return (
+      <div className="rounded-lg border bg-card p-3.5 text-[13px]"><div className="mb-2 font-medium">{ui.title}</div><ol className="space-y-1.5">{ui.steps.map((st, i) => <li key={i} className="flex gap-2.5"><span className="mt-px grid size-5 shrink-0 place-items-center rounded-full border text-[11px] text-muted-foreground">{i + 1}</span><span>{st}</span></li>)}</ol>{ui.notes && <p className="mt-2 text-xs text-muted-foreground">{ui.notes}</p>}<Button size="sm" variant="outline" className="mt-3" onClick={() => router.push(ui.path)}>Take me there</Button></div>
+    );
     case "navigate": return <div className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs text-muted-foreground"><Check className="size-3.5 text-success" />Opened <Link href={ui.path} className="font-mono text-foreground hover:text-primary">{ui.label}</Link></div>;
     case "none": return <div className="rounded-lg border border-dashed px-3 py-2 text-[13px] text-muted-foreground">{ui.reason}</div>;
   }

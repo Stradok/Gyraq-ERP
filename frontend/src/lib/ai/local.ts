@@ -1,7 +1,7 @@
 // Computed answer engine: the no-API-key path. Same tools, same grounding (every figure comes from a tool result),
 // deterministic text. Shown in the UI as "Computed" so it is never mistaken for model output.
 import { interpret } from "../nl";
-import { addDays } from "../data/dates";
+import { addDays, resolvePeriod } from "../data/dates";
 import { getDB, pl, profitVariance, monthSeries } from "../data/queries";
 import { runTool, type ToolName, type ToolResult } from "./tools";
 
@@ -91,17 +91,25 @@ export function answerLocal(q: string, prevTopic?: string): LocalAnswer {
     return mk("anomalies", [{ tool: "get_anomalies", args: {} }], (r) => r[0]!.summary.split(" | ").map((x) => `- ${x}`).join("\n") + "\n\nOpen the items below to review them.");
   }
 
+  if (/^(how (do|can|to)|where|teach|explain how|what does|help me)/.test(s)) {
+    const r = runTool("how_to", { topic: q });
+    if (r.ui.kind === "guide") return { status: "answered", steps: [{ tool: "how_to", args: { topic: q } }], results: [r], topic: "howto", text: `Here's how: ${r.ui.title.toLowerCase()}. Use “Take me there” to open the page.` };
+  }
+
   const dr = s.match(/revenue.*?(?:from\s+)?(\d{4}-\d{2}-\d{2})\s+(?:to|until|-)\s+(\d{4}-\d{2}-\d{2})/);
-  if (dr || /revenue.*(this month|last month|last \d+ days)/.test(s)) {
+  const wantsScreen = /\b(show|open|take me|go to|navigate)\b/.test(s) && /(web ?app|screen|page|report|on the)/.test(s) || /\b(open|take me|go to)\b/.test(s);
+  if (dr || /(revenue|sales).*(today|yesterday|this week|last week|this month|last month|quarter|last \d+ days|year to date|fiscal)/.test(s)) {
     const t = getDB().today;
     let from = dr?.[1] ?? addDays(t, -29), to = dr?.[2] ?? t;
-    if (/last month/.test(s)) { const d = new Date(Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 2, 1)); from = d.toISOString().slice(0, 10); to = addDays(`${t.slice(0, 7)}-01`, -1); }
+    const per = !dr ? resolvePeriod(s, t) : null;
+    if (per) { from = per.from; to = per.to; }
+    else if (/last month/.test(s)) { const d = new Date(Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 2, 1)); from = d.toISOString().slice(0, 10); to = addDays(`${t.slice(0, 7)}-01`, -1); }
     else if (/this month/.test(s)) from = `${t.slice(0, 7)}-01`;
     else { const n = s.match(/last (\d+) days/); if (n) from = addDays(t, -(+n[1]! - 1)); }
     const groupBy = /by (month|customer|product|category|region|rep)/.exec(s)?.[1] as "month" | "customer" | "product" | "category" | "region" | "rep" | undefined;
-    const steps: Step[] = [{ tool: "get_revenue", args: { from, to, groupBy } }, { tool: "open_page", args: { path: "/reports/sales-by-customer", params: { from, to } } }];
+    const steps: Step[] = [{ tool: "get_revenue", args: { from, to, groupBy } }, ...(wantsScreen ? [{ tool: "open_page" as const, args: { path: "/reports/sales-by-customer", params: { from, to } } }] : [])];
     const results = steps.map((st) => runTool(st.tool, st.args));
-    return { status: "answered", steps, results, topic: "revenue", text: `${results[0]!.summary} I've opened the sales-by-customer report for the same dates.` };
+    return { status: "answered", steps, results, topic: "revenue", text: results[0]!.summary + (wantsScreen ? " I've opened the sales-by-customer report for the same dates." : " Say “show it on the webapp” and I'll open the report for the same dates.") };
   }
 
   const stockQ = s.match(/(?:how (?:much|many)|stock of|do we have)\s+(.{3,40}?)(?:\s+(?:do we have|in stock|left|available)|\?|$)/);

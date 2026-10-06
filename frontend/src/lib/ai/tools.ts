@@ -6,6 +6,8 @@ import { arAging, cashProjection, customerStats, getDB, idx, insights, pl, profi
 import { addDays } from "../data/dates";
 import { filterCustomers, customerRows, type CustomerFilter } from "../nl";
 import { ORG } from "../data/catalog";
+import { resolvePeriod } from "../data/dates";
+import { APP_MAP, findGuide } from "./guide";
 
 export interface CustomerLite { id: string; name: string; city: string; outstanding: number; overdue: number; maxDays: number; risk: number; band: string; bounces: number }
 export interface Proposal {
@@ -22,6 +24,7 @@ export type ToolUI =
   | { kind: "proposal"; proposal: Proposal }
   | { kind: "draft"; customerId: string; customer: string; channel: "WhatsApp" | "Email"; text: string }
   | { kind: "navigate"; path: string; label: string }
+  | { kind: "guide"; title: string; steps: string[]; path: string; notes?: string }
   | { kind: "none"; reason: string };
 export interface ToolResult { summary: string; ui: ToolUI; records?: { type: string; id: string; label: string; href: string }[]; metrics?: { label: string; value: string }[] }
 
@@ -139,6 +142,23 @@ export const TOOLS = {
       if (!s) return { summary: "No supplier found.", ui: { kind: "none", reason: `No supplier named “${a.name}”.` } };
       const st = supplierStats(s.id);
       return { summary: `${s.name}: spend 12m ${M(st.spend12m)}, payable ${M(st.payable)}, avg lead ${st.avgLead.toFixed(1)}d (promised ${s.leadTimeDays}), on-time ${st.reliability.toFixed(0)}%, ${st.exceptions} bills with issues.`, ui: { kind: "metrics", items: [{ label: "Spend (12m)", value: M(st.spend12m) }, { label: "Payable", value: M(st.payable) }, { label: "Avg lead time", value: `${st.avgLead.toFixed(0)} days` }, { label: "On-time", value: `${st.reliability.toFixed(0)}%` }] }, records: [{ type: "Supplier", id: s.id, label: s.name, href: `/suppliers/${s.id}` }] };
+    },
+  },
+  resolve_period: {
+    description: "Convert a natural-language period (today, yesterday, this week, last week, this month, last month, last quarter, this quarter, fiscal year to date, last 30 days, a month name) into exact from/to dates. ALWAYS call this before get_revenue or open_page when the user uses a relative date.",
+    input: z.object({ phrase: z.string().min(2) }),
+    run(a: { phrase: string }): ToolResult {
+      const r = resolvePeriod(a.phrase, getDB().today);
+      return r ? { summary: `"${a.phrase}" = ${r.from} to ${r.to} (${r.label}). Today is ${getDB().today}; weeks run Monday to Sunday; fiscal year is July to June.`, ui: { kind: "none", reason: `${r.label}: ${r.from} → ${r.to}` } } : { summary: `Could not interpret "${a.phrase}" as a period. Ask the user for dates.`, ui: { kind: "none", reason: "I couldn't work out that period." } };
+    },
+  },
+  how_to: {
+    description: "Look up how to do something in Meridian ERP or what a screen is for (step-by-step guide with the page path). Use for any 'how do I', 'where is', 'what does' or 'teach me' question.",
+    input: z.object({ topic: z.string().min(2) }),
+    run(a: { topic: string }): ToolResult {
+      const g = findGuide(a.topic, 2);
+      if (!g.length) return { summary: `No guide matched. App map: ${APP_MAP}`, ui: { kind: "none", reason: "No step-by-step guide for that. Ask me about a specific screen or task." } };
+      return { summary: g.map((x) => `${x.title} (page ${x.path}): ${x.steps.join(" ")} ${x.notes ?? ""}`).join(" || "), ui: { kind: "guide", title: g[0]!.title, steps: g[0]!.steps, path: g[0]!.path, notes: g[0]!.notes } };
     },
   },
   get_revenue: {

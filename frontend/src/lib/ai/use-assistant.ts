@@ -2,7 +2,7 @@
 // One assistant engine for the Command Center page and the floating dock.
 // LLM mode streams from /api/chat (tools run server-side); computed mode answers from the same tools locally.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { answerLocal } from "./local";
@@ -14,13 +14,14 @@ export interface LlmStatus { enabled: boolean; model: string; provider: string }
 
 export function useAssistant(user: { name: string; title: string }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [llm, setLlm] = useState<LlmStatus | null>(null);
   const [msgs, setMsgs] = useState<VMsg[]>([]);
   const [busy, setBusy] = useState(false);
   const topic = useRef<string | undefined>(undefined);
   const handled = useRef(new Set<string>());
   useEffect(() => { fetch(withBase("/api/ai/status")).then((r) => r.json()).then(setLlm).catch(() => setLlm({ enabled: false, model: "", provider: "" })); }, []);
-  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: { user } }) });
+  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: { user, page: pathname } }) });
   const useLlm = !!llm?.enabled;
 
   const llmMsgs: VMsg[] = useMemo(() => chat.messages.map((m) => {

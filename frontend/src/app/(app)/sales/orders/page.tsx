@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RangeBanner, inRange, useRange } from "@/components/app/range-banner";
 import { Page, PageHeader } from "@/components/app/page-header";
 import { DataTable } from "@/components/app/data-table";
 import { StatusBadge, Mono } from "@/components/app/status";
@@ -18,6 +19,7 @@ import { idx } from "@/lib/data/queries";
 
 function Orders() {
   const sp = useSearchParams();
+  const range = useRange();
   const { orders } = useOverlay();
   const role = useERP((s) => s.role);
   const db = getDB();
@@ -27,8 +29,9 @@ function Orders() {
     <>
       <PageHeader module="sales" title="Sales" description={role === "rep" ? "Your orders" : "Orders from draft to fulfilment. Stock is reserved when an order is confirmed."} actions={can(role, "order.create") && <Button size="sm" asChild><Link href="/sales/orders/new"><Plus />New order</Link></Button>} />
       <Page>
+        <RangeBanner range={range} />
         <DataTable<SalesOrder>
-          rows={rows} rowKey={(o) => o.id} rowHref={(o) => `/sales/orders/${o.id}`} exportName="sales-orders" initialFilters={sp.get("status") ? { status: sp.get("status")! } : undefined}
+          rows={rows} rowKey={(o) => o.id} rowFilter={(o) => inRange(o.date, range)} rowHref={(o) => `/sales/orders/${o.id}`} exportName="sales-orders" initialFilters={sp.get("status") ? { status: sp.get("status")! } : undefined}
           searchText={(o) => `${o.number} ${idx().cus.get(o.customerId)?.name}`} searchPlaceholder="Search order or customer"
           views={[{ label: "Awaiting fulfilment", filters: { status: "open" } }, { label: "Needs credit override", filters: { status: "draft" } }]}
           filters={[

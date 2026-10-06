@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { RangeBanner, inRange, useRange } from "@/components/app/range-banner";
 import { Page, PageHeader } from "@/components/app/page-header";
 import { DataTable } from "@/components/app/data-table";
 import { StatusBadge, Mono } from "@/components/app/status";
@@ -13,6 +14,7 @@ import { useERP } from "@/lib/store";
 
 function Invoices() {
   const sp = useSearchParams();
+  const range = useRange();
   const ov = useOverlay();
   const role = useERP((s) => s.role);
   const db = getDB();
@@ -26,8 +28,9 @@ function Invoices() {
     <>
       <PageHeader module="sales" title="Sales" description="Invoices raised on dispatch. Overdue is derived from due date and balance, never stored." />
       <Page>
+        <RangeBanner range={range} />
         <DataTable<Invoice>
-          rows={rows} rowKey={(i) => i.id} rowHref={(i) => `/sales/invoices/${i.id}`} exportName="invoices" initialFilters={sp.get("status") ? { status: sp.get("status")! } : undefined}
+          rows={rows} rowKey={(i) => i.id} rowFilter={(i) => inRange(i.date, range)} rowHref={(i) => `/sales/invoices/${i.id}`} exportName="invoices" initialFilters={sp.get("status") ? { status: sp.get("status")! } : undefined}
           searchText={(i) => `${i.number} ${idx().cus.get(i.customerId)?.name} ${i.fbr.irn}`} searchPlaceholder="Search invoice, customer or IRN" defaultSort={{ id: "date", dir: "desc" }}
           views={[{ label: "Overdue", filters: { status: "overdue" } }, { label: "Unpaid", filters: { status: "unpaid" } }, { label: "Partially paid", filters: { status: "partially_paid" } }]}
           filters={[
