@@ -72,6 +72,7 @@ export interface Customer {
   repId: string;
   warehouseId: string;
   status: "active" | "on_hold" | "blocked";
+  holdReason?: string;
   profile: PayProfile;
   contact: string;
   phone: string;
@@ -125,6 +126,7 @@ export interface SalesOrder {
   invoiceId: string | null;
   creditCheck?: CreditCheck;
   source: "user" | "ai_proposal";
+  picked?: boolean;
 }
 
 export interface CreditCheck {
@@ -158,6 +160,7 @@ export interface Invoice {
   status: InvoiceStatus;
   paymentStatus: PaymentStatus;
   fbr: { status: "simulated" | "pending" | "failed"; irn: string; at: string };
+  shipmentId?: string;
 }
 
 export type PaymentMethod = "bank_transfer" | "cash" | "cheque" | "pdc";
@@ -218,7 +221,7 @@ export interface GoodsReceipt {
   supplierId: string;
   warehouseId: string;
   date: ISODate;
-  lines: { productId: string; qty: number; batch: string; expiry: ISODate }[];
+  lines: { productId: string; qty: number; rejected?: number; batch: string; expiry: ISODate }[];
   value: number;
 }
 
@@ -253,7 +256,7 @@ export interface SupplierBill {
   wht236g: number;
   total: number;
   paid: number;
-  status: "pending_match" | "exception" | "posted" | "paid";
+  status: "pending_match" | "exception" | "posted" | "paid" | "rejected";
   exceptions: MatchException[];
   source: "manual" | "ai_extraction";
 }
@@ -357,6 +360,58 @@ export type ApprovalType =
   | "leave"
   | "journal";
 
+export interface Shipment {
+  id: string;
+  number: string; // delivery challan DC-…
+  orderId: string;
+  invoiceId: string;
+  customerId: string;
+  warehouseId: string;
+  date: ISODate;
+  vehicle: string;
+  driver: string;
+  gatePass: string;
+  status: "dispatched" | "delivered" | "returned";
+  lines: { productId: string; qty: number }[];
+}
+
+export interface StockTransfer {
+  id: string;
+  number: string;
+  fromId: string;
+  toId: string;
+  productId: string;
+  qty: number;
+  value: number;
+  date: ISODate;
+  by: string;
+}
+
+export interface PrincipalClaim {
+  id: string;
+  number: string;
+  supplierId: string;
+  type: "expiry" | "damage" | "scheme" | "price_differential";
+  date: ISODate;
+  amount: number;
+  status: "draft" | "submitted" | "accepted" | "settled" | "rejected";
+  ref: string;
+  note: string;
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  event: "invoice.posted" | "stock.low" | "payment.bounced" | "order.confirmed" | "po.received" | "bill.exception";
+  fact: "invoice.total" | "order.total" | "available" | "payment.amount" | "po.total" | "bill.total" | "";
+  op: "gt" | "gte" | "lt" | "lte" | "any";
+  value: number;
+  action: "notify" | "create_task" | "require_approval" | "create_recommendation";
+  target: string; // role or text
+  enabled: boolean;
+  runs: number;
+}
+
 export interface Approval {
   id: string;
   type: ApprovalType;
@@ -369,6 +424,10 @@ export interface Approval {
   ref: string; // entity id
   source: "user" | "ai";
   step: string; // e.g. "Owner"
+  payload?: Record<string, string | number>;
+  decidedBy?: string;
+  decidedAt?: string;
+  comment?: string;
 }
 
 export interface AuditEvent {
@@ -411,6 +470,7 @@ export interface CreditNote {
   customerId: string;
   date: ISODate;
   reason: "expired" | "damaged" | "price_difference" | "short_delivery";
+  lines?: { productId: string; qty: number; condition: "resellable" | "damaged" | "expired" }[];
   subtotal: number;
   tax: number;
   total: number;

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:engine": "tsx tests/engine.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.72",
@@ -39,6 +40,7 @@
     "eslint-config-next": "16.3.8",
     "playwright": "^1.63.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "packageManager": "pnpm@10.34.6"

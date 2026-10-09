@@ -28,12 +28,16 @@ export function idx(): Idx {
   return idxCache;
 }
 
-const memo = new Map<string, unknown>();
+// Derived-data cache, scoped to one DB object. A command that mutates the DB calls invalidate(db).
+const memos = new WeakMap<DB, Map<string, unknown>>();
 function cached<T>(k: string, f: () => T): T {
-  const full = `${getDB().today}:${k}`;
-  if (!memo.has(full)) memo.set(full, f());
-  return memo.get(full) as T;
+  const db = getDB();
+  let m = memos.get(db);
+  if (!m) { m = new Map(); memos.set(db, m); }
+  if (!m.has(k)) m.set(k, f());
+  return m.get(k) as T;
 }
+export function invalidate(db: DB) { memos.delete(db); idxCache = null; }
 
 // ───────── ledger ─────────
 export function glNet(codes: string[], from: ISODate, to: ISODate, opts: { includeClosing?: boolean } = {}): number {

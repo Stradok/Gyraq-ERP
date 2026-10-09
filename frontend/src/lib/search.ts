@@ -1,7 +1,10 @@
 import { idx, openInvoices } from "./data/queries";
 
 export interface Hit { type: string; id: string; title: string; subtitle: string; href: string }
-let index: Hit[] | null = null;
+import type { DB } from "./data/sim";
+import { getDB } from "./data/sim";
+const indexes = new WeakMap<DB, Hit[]>();
+export function resetSearch(db: DB) { indexes.delete(db); }
 function build(): Hit[] {
   const { db, cus, sup } = idx();
   const h: Hit[] = [];
@@ -19,7 +22,9 @@ function build(): Hit[] {
 export function search(q: string, limit = 8): Hit[] {
   const s = q.trim().toLowerCase();
   if (!s) return [];
-  index ??= build();
+  const db = getDB();
+  let index = indexes.get(db);
+  if (!index) { index = build(); indexes.set(db, index); }
   const out: { h: Hit; score: number }[] = [];
   for (const h of index) {
     const t = h.title.toLowerCase(), sub = h.subtitle.toLowerCase();

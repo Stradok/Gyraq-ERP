@@ -9,6 +9,7 @@ import type {
   Account, Approval, AuditEvent, BankTxn, CategoryId, CreditNote, Customer, CustomerPayment, DocLine, Employee, Expense,
   GoodsReceipt, ISODate, Invoice, JournalEntry, JournalLine, Lead, LeaveRequest, MatchException, Notification, PayrollRun,
   Product, PurchaseOrder, Quote, SalesOrder, StockCount, Supplier, SupplierBill, SupplierPayment, Warehouse,
+  AutomationRule, PrincipalClaim, Shipment, StockTransfer,
 } from "./types";
 
 const SCALE_K = 0.74; // order-size calibration (tuned for ~Rs 110-130M monthly revenue)
@@ -54,6 +55,11 @@ export interface DB {
   audit: AuditEvent[];
   notifications: Notification[];
   leads: Lead[];
+  shipments: Shipment[];
+  transfers: StockTransfer[];
+  claims: PrincipalClaim[];
+  rules: AutomationRule[];
+  periodStatus: Record<string, "closed" | "soft_closed" | "open">; // overrides computed fiscal-period status
   stock: Map<string, Cell>; // key `${productId}|${warehouseId}`
   calendar: ForecastEvent[];
   bankBalanceAccounts: string[];
@@ -784,6 +790,17 @@ export function buildDB(): DB {
     const draw = Math.round((cashNow - targetCash) / 1000) * 1000;
     je(addDays(today, -3), "Director's drawings (owner withdrawal)", "Manual journal", [{ account: "3020", debit: draw, credit: 0 }, { account: "1100", debit: 0, credit: draw }], "manual", "Ayesha Siddiqui");
   }
+  // Inter-bank sweep: the day-to-day flows above hit accounts unevenly, so rebalance each account to a sensible share of total cash.
+  {
+    const accts = ["1100", "1110", "1120", "1130"];
+    const bals = accts.map((a) => balOf([a]));
+    const total = bals.reduce((x, y) => x + y, 0);
+    const shares = [0.4, 0.25, 0.2, 0.15];
+    const sweep = accts.map((a, i) => ({ account: a, diff: total * shares[i]! - bals[i]! })).filter((x) => Math.abs(x.diff) > 1);
+    const rounded = sweep.map((x) => ({ ...x, diff: Math.round(x.diff) }));
+    const drift = rounded.reduce((y, x) => y + x.diff, 0);
+    if (rounded.length) { rounded[0]!.diff -= drift; je(addDays(today, -4), "Inter-bank funds transfer (balance accounts)", "Manual journal", rounded.map((x) => ({ account: x.account, debit: Math.max(x.diff, 0), credit: Math.max(-x.diff, 0) })), "manual", "Ayesha Siddiqui"); }
+  }
   // Journal anomaly: Rs 499,000 manual JE on a Sunday late night
   let sunday = addDays(today, -9); while (weekday(sunday) !== 0) sunday = addDays(sunday, -1);
   je(sunday, "Misc. adjustment – consultancy (Sunday 23:10)", "Manual journal", [{ account: "6990", debit: 499_000, credit: 0 }, { account: "1100", debit: 0, credit: 499_000 }], "manual", "Kashif Raza");
@@ -931,14 +948,29 @@ export function buildDB(): DB {
 
   return {
     today, start, warehouses, suppliers, products, customers, employees, quotes, orders, invoices, creditNotes, payments, pos, grns, bills, supplierPayments, stockCounts, expenses, leaves, payroll,
+    shipments: [], transfers: [], claims: [], periodStatus: {},
+    rules: [
+      { id: "WF-001", name: "Large invoice approval", event: "invoice.posted", fact: "invoice.total", op: "gt", value: 500_000, action: "notify", target: "finance", enabled: true, runs: 41 },
+      { id: "WF-002", name: "Low stock recommendation", event: "stock.low", fact: "available", op: "any", value: 0, action: "create_recommendation", target: "procurement", enabled: true, runs: 128 },
+      { id: "WF-003", name: "Bounced cheque follow-up", event: "payment.bounced", fact: "payment.amount", op: "any", value: 0, action: "create_task", target: "sales_manager", enabled: true, runs: 9 },
+    ],
     accounts: ACCOUNTS, journal, bank, approvals, audit, notifications, leads, stock, calendar, bankBalanceAccounts: bankAccts,
     scenario: { khanId: khan.id, alNoorId: alNoor.id, cityId: cityCC.id, indusBillId: indusBill.id, dupBillId: lb2.id, lowStock: [...skipKey], lhePcLocation: "C" },
   };
 }
 
-let cached: DB | null = null;
+let base: DB | null = null;
+let resolver: (() => DB | undefined) | null = null;
+/** Server routes register a resolver so getDB() returns the request's own world (base + replayed commands). */
+export function setWorldResolver(fn: () => DB | undefined) { resolver = fn; }
+let override: DB | null = null;
+/** Run synchronous code with getDB() pinned to `db` (used by the command engine). */
+export function runOn<T>(db: DB, fn: () => T): T { const prev = override; override = db; try { return fn(); } finally { override = prev; } }
 export function getDB(): DB {
-  if (!cached || cached.today !== todayPK()) cached = buildDB();
-  return cached;
+  if (override) return override;
+  const w = resolver?.();
+  if (w) return w;
+  if (!base || base.today !== todayPK()) base = buildDB();
+  return base;
 }
 void ORG; void endOfMonth; void startOfMonth;
