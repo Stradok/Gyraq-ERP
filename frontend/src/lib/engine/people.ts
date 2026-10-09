@@ -56,3 +56,11 @@ export function createRule(ctx: Ctx, p: Omit<import("../data/types").AutomationR
   notify(ctx, `Rule created: ${r.name}`, `${r.event} → ${r.action}`, "info", "/automations");
   return ok({ id: r.id }, `${r.name} created`);
 }
+
+export function queueMessage(ctx: Ctx, p: { customerId: string; channel: "WhatsApp" | "Email"; text: string }): Result {
+  const c = ctx.db.customers.find((x) => x.id === p.customerId);
+  if (!c) return fail("CUS_NOT_FOUND", "Customer not found", "It may have been removed.", "Refresh the page.");
+  if (p.text.trim().length < 10) return fail("MSG_EMPTY", "Message is empty", "There is nothing to send.", "Write the message first.");
+  audit(ctx, "message.queued", "Customer", c.name, `${p.channel} follow-up queued (simulated, not sent)`);
+  return ok(undefined, "Queued in the outbox (simulated). Nothing was sent; connect WhatsApp in Integrations to deliver for real.");
+}

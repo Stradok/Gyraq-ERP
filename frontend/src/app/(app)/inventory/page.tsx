@@ -1,5 +1,11 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { NewProductDialog } from "@/components/app/forms";
+import { useERP, useWorld } from "@/lib/store";
+import { can } from "@/lib/rbac";
 import { Page, PageHeader } from "@/components/app/page-header";
 import { DataTable } from "@/components/app/data-table";
 import { StatusBadge, Mono } from "@/components/app/status";
@@ -11,6 +17,10 @@ import { money, num, titleCase } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
 
 export default function InventoryPage() {
+  useWorld((s) => s.version);
+  const router = useRouter();
+  const role = useERP((s) => s.role);
+  const [openNew, setOpenNew] = useState(false);
   const db = getDB();
   const ov = useOverlay();
   const rows = useMemo(() => db.products.map((p) => {
@@ -25,7 +35,8 @@ export default function InventoryPage() {
   type R = (typeof rows)[number];
   return (
     <>
-      <PageHeader module="inventory" title="Inventory" description="Products with stock summed across warehouses. Every quantity comes from the stock ledger." />
+      <PageHeader module="inventory" title="Inventory" description="Products with stock summed across warehouses. Every quantity comes from the stock ledger." actions={can(role, "master.create") && <Button size="sm" onClick={() => setOpenNew(true)}><Plus />New product</Button>} />
+      <NewProductDialog open={openNew} onOpenChange={setOpenNew} onCreated={(id) => router.push(`/inventory/${id}`)} />
       <Page>
         <DataTable<R> rows={rows} rowKey={(r) => r.p.id} rowHref={(r) => `/inventory/${r.p.id}`} exportName="products" searchText={(r) => `${r.p.name} ${r.p.sku} ${r.p.brand}`} searchPlaceholder="Search name, SKU or brand" defaultSort={{ id: "value", dir: "desc" }}
           views={[{ label: "Low stock", filters: { st: "critical" } }, { label: "Excess stock", filters: { st: "excess" } }]}

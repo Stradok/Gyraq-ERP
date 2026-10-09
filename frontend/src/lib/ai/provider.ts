@@ -5,13 +5,14 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 
-export type Tier = "fast" | "reasoning";
+export type Tier = "fast" | "reasoning" | "vision";
 const list = (v: string | undefined, d: string[]) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : d);
 
-// Free OpenRouter models change often; keep fallbacks in env. Defaults are tool-calling capable at the time of writing.
+// Free OpenRouter models change often (qwen3.8-27b:free was removed in Oct 2026); override with AI_MODEL_REASONING / _FAST / _VISION.
 const OR_DEFAULTS: Record<Tier, string[]> = {
-  reasoning: ["nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3.8-27b:free", "google/gemma-4-31b-it:free"],
-  fast: ["qwen/qwen3.8-27b:free", "google/gemma-4-26b-a4b-it:free"],
+  reasoning: ["nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free"],
+  fast: ["google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-super-120b-a12b:free"],
+  vision: ["google/gemma-4-26b-a4b-it:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"],
 };
 
 export function aiEnabled(): boolean {
@@ -29,9 +30,9 @@ export function aiInfo() {
 
 export function modelChain(tier: Tier): string[] {
   const p = (process.env.AI_PROVIDER ?? "openrouter").toLowerCase();
-  if (p === "anthropic") return list(process.env[tier === "fast" ? "AI_MODEL_FAST" : "AI_MODEL_REASONING"], [tier === "fast" ? "claude-haiku-4-5-20251001" : "claude-sonnet-5-5"]);
-  if (p === "gemini") return list(process.env[tier === "fast" ? "AI_MODEL_FAST" : "AI_MODEL_REASONING"], ["gemini-2.5-flash"]);
-  return list(process.env[tier === "fast" ? "AI_MODEL_FAST" : "AI_MODEL_REASONING"] ?? process.env.AI_MODEL, OR_DEFAULTS[tier]);
+  if (p === "anthropic") return list(process.env[`AI_MODEL_${tier.toUpperCase()}`], [tier === "fast" ? "claude-haiku-4-5-20251001" : "claude-sonnet-5-5"]);
+  if (p === "gemini") return list(process.env[`AI_MODEL_${tier.toUpperCase()}`], ["gemini-2.5-flash"]);
+  return list(process.env[`AI_MODEL_${tier.toUpperCase()}`] ?? (tier === "reasoning" ? process.env.AI_MODEL : undefined), OR_DEFAULTS[tier]);
 }
 
 export function getModel(tier: Tier): LanguageModel {

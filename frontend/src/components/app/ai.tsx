@@ -99,7 +99,7 @@ export function InsightDrawer({ insight, open, onOpenChange, canAct }: { insight
                 </dd>
               </dl>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" disabled={!canAct} onClick={() => { const r = createPOFromRecommendation(rec, q); onOpenChange(false); router.push(`/purchasing/orders/${r.po.id}`); }}><Check />Create purchase order</Button>
+                <Button size="sm" disabled={!canAct} onClick={() => { const r = createPOFromRecommendation(rec, q); if (r.ok) { onOpenChange(false); router.push(`/purchasing/orders/${(r.value as { id: string }).id}`); } }}><Check />Create purchase order</Button>
                 <Button size="sm" variant="outline" onClick={() => router.push("/inventory/replenishment")}>Open replenishment</Button>
               </div>
               {!canAct && <p className="mt-2 text-[11px] text-muted-foreground">Your role can&apos;t confirm AI proposals. Switch persona to try it.</p>}

@@ -1,12 +1,11 @@
 "use client";
-// Client-side overlay on top of the deterministic dataset: user actions in the demo (approve, create PO, record payment…)
-// persist in localStorage so the app behaves like a real system without a backend. Replaced by API calls later.
+// UI preferences + the command log. The log is the demo's database: every action is a command (lib/engine) that is
+// replayed onto the seeded data on load. A real backend replaces the log with API calls (docs/MIGRATION.md).
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Role } from "./rbac";
-import type { Approval, AuditEvent, CustomerPayment, PurchaseOrder, SalesOrder } from "./data/types";
+import type { CommandRecord } from "./engine/commands";
 
-export interface Decision { decision: "approved" | "rejected"; at: string; by: string; comment?: string }
 export interface RecentItem { href: string; title: string }
 
 interface State {
@@ -14,31 +13,23 @@ interface State {
   collapsed: boolean;
   favorites: RecentItem[];
   recents: RecentItem[];
-  decisions: Record<string, Decision>;
   dismissed: string[];
   readNotifs: string[];
-  extraPOs: PurchaseOrder[];
-  extraOrders: SalesOrder[];
-  extraPayments: CustomerPayment[];
-  extraApprovals: Approval[];
-  extraAudit: AuditEvent[];
   actedRecs: Record<string, "accepted" | "dismissed">;
+  commands: CommandRecord[];
+  cmdSeq: number;
+  anchor: string; // business date the log was recorded against; the seed shifts daily, so the log expires with it
   setRole: (r: Role) => void;
   toggleCollapsed: () => void;
   toggleFavorite: (i: RecentItem) => void;
   visit: (i: RecentItem) => void;
-  decide: (id: string, d: Decision) => void;
   dismiss: (id: string) => void;
   markRead: (ids: string[]) => void;
-  addPO: (po: PurchaseOrder, approval?: Approval) => void;
-  addOrder: (o: SalesOrder) => void;
-  addPayment: (p: CustomerPayment) => void;
-  addAudit: (e: AuditEvent) => void;
   actRec: (id: string, v: "accepted" | "dismissed") => void;
   reset: () => void;
 }
 
-const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], decisions: {}, dismissed: [], readNotifs: [], extraPOs: [], extraOrders: [], extraPayments: [], extraApprovals: [], extraAudit: [], actedRecs: {} };
+const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], readNotifs: [], actedRecs: {}, commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
 
 export const useERP = create<State>()(
   persist(
@@ -48,16 +39,14 @@ export const useERP = create<State>()(
       toggleCollapsed: () => set((s) => ({ collapsed: !s.collapsed })),
       toggleFavorite: (i) => set((s) => ({ favorites: s.favorites.some((f) => f.href === i.href) ? s.favorites.filter((f) => f.href !== i.href) : [...s.favorites, i].slice(-8) })),
       visit: (i) => set((s) => ({ recents: [i, ...s.recents.filter((r) => r.href !== i.href)].slice(0, 8) })),
-      decide: (id, d) => set((s) => ({ decisions: { ...s.decisions, [id]: d } })),
       dismiss: (id) => set((s) => ({ dismissed: [...s.dismissed, id] })),
       markRead: (ids) => set((s) => ({ readNotifs: [...new Set([...s.readNotifs, ...ids])] })),
-      addPO: (po, approval) => set((s) => ({ extraPOs: [po, ...s.extraPOs], extraApprovals: approval ? [approval, ...s.extraApprovals] : s.extraApprovals })),
-      addOrder: (o) => set((s) => ({ extraOrders: [o, ...s.extraOrders] })),
-      addPayment: (p) => set((s) => ({ extraPayments: [p, ...s.extraPayments] })),
-      addAudit: (e) => set((s) => ({ extraAudit: [e, ...s.extraAudit] })),
       actRec: (id, v) => set((s) => ({ actedRecs: { ...s.actedRecs, [id]: v } })),
       reset: () => set({ ...initial }),
     }),
-    { name: "meridian-demo-v1", storage: createJSONStorage(() => localStorage), skipHydration: true },
+    { name: "meridian-demo-v2", storage: createJSONStorage(() => localStorage), skipHydration: true },
   ),
 );
+
+/** Bumped after every command so pages re-read the mutated data. Not persisted. */
+export const useWorld = create<{ version: number; ready: boolean; bump: () => void; setReady: () => void }>((set) => ({ version: 0, ready: false, bump: () => set((s) => ({ version: s.version + 1 })), setReady: () => set({ ready: true }) }));

@@ -7,6 +7,9 @@ import { StatusBadge, Mono } from "@/components/app/status";
 import { KeyValue, SupplierLink, Totals, whCode } from "@/components/app/entity";
 import { AiChip } from "@/components/app/ai";
 import { ApprovalButtons } from "@/components/app/approval-actions";
+import { Button } from "@/components/ui/button";
+import { useERP, useWorld } from "@/lib/store";
+import { can } from "@/lib/rbac";
 import { Progress } from "@/components/ui/progress";
 import { getDB, idx } from "@/lib/data/queries";
 import { dateLong, dateShort, money, money2, num } from "@/lib/format";
@@ -15,6 +18,8 @@ import { cn } from "@/lib/utils";
 
 export default function PODetail() {
   const { id } = useParams<{ id: string }>();
+  useWorld((s) => s.version);
+  const role = useERP((s) => s.role);
   const ov = useOverlay();
   const po = ov.pos.find((p) => p.id === id);
   if (!po) return <Page><p className="text-sm text-muted-foreground">Purchase order not found.</p></Page>;
@@ -32,7 +37,7 @@ export default function PODetail() {
   return (
     <>
       <PageHeader back={{ href: "/purchasing/orders", label: "Purchase orders" }} title={<span className="flex items-center gap-3"><Mono className="text-xl">{po.number}</Mono><StatusBadge status={po.status} />{po.source === "ai_proposal" && <AiChip label="AI-proposed" />}</span>}
-        description={<span><SupplierLink id={po.supplierId} /> · ordered {dateLong(po.date)} · deliver to {whCode(po.warehouseId)} · expected {dateShort(po.expectedDate)}</span>} actions={pending && approval ? <ApprovalButtons approval={approval} /> : undefined} />
+        description={<span><SupplierLink id={po.supplierId} /> · ordered {dateLong(po.date)} · deliver to {whCode(po.warehouseId)} · expected {dateShort(po.expectedDate)}</span>} actions={<>{pending && approval && <ApprovalButtons approval={approval} />}{(po.status === "approved" || po.status === "partially_received") && can(role, "po.receive") && <Button size="sm" asChild><Link href={`/warehouses/receive?wh=${po.warehouseId}`}>Receive goods</Link></Button>}{["partially_received", "received"].includes(po.status) && can(role, "bill.create") && <Button size="sm" variant="outline" asChild><Link href="/purchasing/bills/new">Enter bill</Link></Button>}</>} />
       <Page>
         <div className="flex flex-wrap items-center gap-1 text-xs">{flow.map((s, i) => (<div key={s} className="flex items-center gap-1"><span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1", i <= idxStep ? "border-primary/40 bg-primary/10" : "text-muted-foreground")}>{i < idxStep ? <Check className="size-3 text-primary" /> : i === idxStep ? <CircleDashed className="size-3 text-primary" /> : null}{s}</span>{i < flow.length - 1 && <span className="h-px w-5 bg-border" />}</div>))}</div>
         {newlyApproved && (

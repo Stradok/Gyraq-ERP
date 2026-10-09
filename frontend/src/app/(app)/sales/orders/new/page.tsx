@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Plus, Trash2, X } from "lucide-react";
-import { toast } from "sonner";
+import { run } from "@/lib/engine/client";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,6 @@ import { StatusBadge, RiskBadge } from "@/components/app/status";
 import { Totals } from "@/components/app/entity";
 import { customerStats, getDB, idx } from "@/lib/data/queries";
 import { creditCheck, docTotals, priceLine, type PricedLine } from "@/lib/engines";
-import type { SalesOrder } from "@/lib/data/types";
 import { money, money2 } from "@/lib/format";
 import { useERP } from "@/lib/store";
 import { PERSONAS } from "@/lib/rbac";
@@ -23,7 +22,7 @@ interface Row { productId: string; cartons: number; disc: number }
 
 export default function NewOrder() {
   const router = useRouter();
-  const { role, addOrder, addAudit } = useERP();
+  const role = useERP((s) => s.role);
   const db = getDB();
   const me = db.employees.find((e) => e.name === PERSONAS.find((p) => p.role === role)!.empName);
   const custs = role === "rep" ? db.customers.filter((c) => c.repId === me?.id) : db.customers;
@@ -41,14 +40,8 @@ export default function NewOrder() {
   const setRow = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, k) => (k === i ? { ...r, ...patch } : r)));
 
   const save = (mode: "confirm" | "draft") => {
-    const n = 20000 + db.orders.length + useERP.getState().extraOrders.length + 1;
-    const blocked = check.decision === "block";
-    const status: SalesOrder["status"] = mode === "draft" || blocked ? "draft" : "reserved";
-    const so: SalesOrder = { id: `so_new_${n}`, number: `SO-${n}`, customerId: cid, repId: c.repId, warehouseId: c.warehouseId, date: db.today, status, lines: priced.map(({ cartons: _c, trace: _t, ...l }) => l), subtotal: totals.gross, discount: totals.discount, tax: totals.tax, total: totals.total, invoiceId: null, source: "user", creditCheck: check };
-    addOrder(so);
-    addAudit({ id: `au_new_${Date.now()}`, at: new Date().toISOString(), actor: PERSONAS.find((p) => p.role === role)!.name, action: mode === "confirm" && !blocked ? "sales_order.confirmed" : "sales_order.drafted", entity: "Sales order", ref: so.number, source: "user", detail: mode === "confirm" && !blocked ? "Stock reserved · credit check passed" : blocked ? "Saved as draft: credit check blocked" : "Saved as draft" });
-    toast.success(status === "reserved" ? `${so.number} confirmed` : `${so.number} saved as draft`, { description: status === "reserved" ? "Stock reserved and fulfilment task created." : blocked ? "Credit check blocked confirmation. Request an override from the order page." : undefined });
-    router.push(`/sales/orders/${so.id}`);
+    const r = run("CreateOrder", { customerId: cid, lines: rows.map((x) => ({ productId: x.productId, cartons: x.cartons, discPct: x.disc })), mode });
+    if (r.ok) router.push(`/sales/orders/${(r.value as { id: string }).id}`);
   };
 
   const available = db.products.filter((p) => !rows.some((r) => r.productId === p.id));

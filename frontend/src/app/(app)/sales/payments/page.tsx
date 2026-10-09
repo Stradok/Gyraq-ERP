@@ -9,10 +9,12 @@ import { DataTable } from "@/components/app/data-table";
 import { StatusBadge, Mono } from "@/components/app/status";
 import { CustomerLink, MoneyText } from "@/components/app/entity";
 import { RecordPaymentDialog } from "@/components/app/record-payment";
+import { DepositCashDialog } from "@/components/app/forms";
+import { run } from "@/lib/engine/client";
 import { getDB, idx } from "@/lib/data/queries";
 import { dateShort, money, titleCase } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
 import { can } from "@/lib/rbac";
 
 function Payments() {
@@ -20,11 +22,14 @@ function Payments() {
   const range = useRange();
   const ov = useOverlay();
   const role = useERP((s) => s.role);
+  useWorld((s) => s.version);
   const [open, setOpen] = useState(sp.get("new") === "1");
-  const rows = [...ov.payments, ...getDB().payments];
+  const [dep, setDep] = useState(false);
+  const rows = getDB().payments;
   return (
     <>
-      <PageHeader module="sales" title="Sales" description="Customer receipts: cash, bank transfer, cheque and post-dated cheques with their lifecycle." actions={can(role, "payment.record") && <Button size="sm" onClick={() => setOpen(true)}><Plus />Record payment</Button>} />
+      <PageHeader module="sales" title="Sales" description="Customer receipts: cash, bank transfer, cheque and post-dated cheques with their lifecycle." actions={<>{can(role, "payment.record") && <Button size="sm" variant="outline" onClick={() => setDep(true)}>Deposit cash</Button>}{can(role, "payment.record") && <Button size="sm" onClick={() => setOpen(true)}><Plus />Record payment</Button>}</>} />
+      {dep && <DepositCashDialog open onOpenChange={setDep} />}
       <RecordPaymentDialog open={open} onOpenChange={setOpen} />
       <Page>
         <RangeBanner range={range} />
@@ -44,6 +49,7 @@ function Payments() {
             { id: "alloc", header: "Allocated to", cell: (p) => (p.allocations.length ? <Mono>{p.allocations.map((a) => idx().inv.get(a.invoiceId)?.number).join(", ")}</Mono> : <span className="text-muted-foreground">—</span>), hide: "xl" },
             { id: "a", header: "Amount", cell: (p) => <MoneyText v={p.amount} />, align: "right", sort: (p) => p.amount, exp: (p) => p.amount },
             { id: "s", header: "Status", cell: (p) => <StatusBadge status={p.status} />, sort: (p) => p.status, exp: (p) => p.status },
+            { id: "act", header: "", align: "right", cell: (p) => (can(role, "payment.record") && (p.status === "in_hand" || p.status === "deposited") ? <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>{p.status === "in_hand" && <Button size="xs" variant="outline" onClick={() => run("DepositCheque", { paymentId: p.id })}>Deposit</Button>}{p.status === "deposited" && <Button size="xs" variant="outline" onClick={() => run("ClearCheque", { paymentId: p.id })}>Clear</Button>}<Button size="xs" variant="ghost" className="text-danger" onClick={() => run("BounceCheque", { paymentId: p.id, reason: "Returned unpaid" })}>Bounced</Button></span> : null) },
           ]} />
       </Page>
     </>

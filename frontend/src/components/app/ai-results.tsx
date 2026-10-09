@@ -9,11 +9,12 @@ import { Bars, CashChart, Waterfall } from "@/components/charts/charts";
 import { AiChip } from "./ai";
 import { RiskBadge } from "./status";
 import type { Proposal, ToolUI } from "@/lib/ai/tools";
-import { createPOFromRecommendation, recordPayment } from "@/lib/actions";
+import { createPOFromRecommendation } from "@/lib/actions";
+import { run } from "@/lib/engine/client";
 import { idx, recommendations } from "@/lib/data/queries";
 import { money, moneyM, num } from "@/lib/format";
 import { useERP } from "@/lib/store";
-import { PERSONAS, can } from "@/lib/rbac";
+import { can } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 /** Tiny markdown subset: **bold**, "- " bullets, blank-line paragraphs. */
@@ -33,27 +34,22 @@ export function Md({ text }: { text: string }) {
 }
 
 export function useProposalExec() {
-  const { role, addAudit } = useERP();
-  const actor = PERSONAS.find((p) => p.role === role)!.name;
+  const role = useERP((s) => s.role);
   return (p: Proposal): { ok: boolean; href?: string } => {
     if (!can(role, "ai.confirm")) { toast.error("Your role can't confirm AI proposals", { description: "Switch persona (Finance, Sales Manager or Procurement)." }); return { ok: false }; }
     if (p.command === "CreatePurchaseOrder") {
       const rec = recommendations().find((r) => r.id === p.params.recId);
       if (!rec) { toast.error("This recommendation changed", { description: "Reload the recommendation and try again." }); return { ok: false }; }
       const x = createPOFromRecommendation(rec, Number(p.params.qty));
-      return { ok: true, href: `/purchasing/orders/${x.po.id}` };
+      return x.ok ? { ok: true, href: `/purchasing/orders/${(x.value as { id: string }).id}` } : { ok: false };
     }
     if (p.command === "PlaceCreditHold") {
-      const c = idx().cus.get(String(p.params.customerId))!;
-      const a = { id: `apr_new_hold_${c.id}_${Date.now()}`, type: "credit_limit" as const, title: `Credit hold – ${c.name}`, subtitle: "AI-proposed · confirmed by a person", amount: null, requestedBy: actor, requestedAt: new Date().toISOString().slice(0, 10), status: "pending" as const, ref: c.id, source: "ai" as const, step: "Sales Manager" };
-      useERP.setState((s) => ({ extraApprovals: [a, ...s.extraApprovals] }));
-      addAudit({ id: `au_new_${Date.now()}`, at: new Date().toISOString(), actor, action: "ai_proposal.confirmed", entity: "Customer", ref: c.name, source: "ai_proposal", detail: "Confirmed AI-proposed credit hold; sent for approval" });
-      toast.success("Credit hold sent for approval", { description: c.name });
-      return { ok: true, href: "/approvals" };
+      const r = run("RequestCreditHold", { customerId: String(p.params.customerId), reason: String(p.lines.find((l) => l[0] === "Reason")?.[1] ?? "AI-proposed") }, { source: "ai_proposal" });
+      return r.ok ? { ok: true, href: "/approvals" } : { ok: false };
     }
     if (p.command === "RecordPayment") {
-      const pay = recordPayment({ customerId: String(p.params.customerId), amount: Number(p.params.amount), method: p.params.method as "bank_transfer" | "cash" | "cheque" | "pdc" });
-      return { ok: true, href: `/customers/${pay.customerId}` };
+      const r = run("RecordPayment", { customerId: String(p.params.customerId), amount: Number(p.params.amount), method: p.params.method as "bank_transfer" | "cash" | "cheque" | "pdc" }, { source: "ai_proposal" });
+      return r.ok ? { ok: true, href: `/customers/${p.params.customerId}` } : { ok: false };
     }
     return { ok: false };
   };
@@ -92,7 +88,6 @@ function RecCard({ id }: { id: string }) {
 export function ToolResultView({ ui }: { ui: ToolUI }) {
   const [copied, setCopied] = useState(false);
   const router = useRouter();
-  const { role, addAudit } = useERP();
   switch (ui.kind) {
     case "customers": return (
       <div className="overflow-hidden rounded-lg border bg-card"><table className="w-full text-[13px]"><thead><tr className="border-b bg-subtle text-xs text-muted-foreground"><th className="px-3 py-1.5 text-left font-medium">Customer</th><th className="px-2 py-1.5 text-right font-medium">Outstanding</th><th className="px-2 py-1.5 text-right font-medium">Overdue</th><th className="hidden px-2 py-1.5 text-right font-medium sm:table-cell">Oldest</th><th className="px-3 py-1.5 text-right font-medium">Risk</th></tr></thead>
@@ -109,7 +104,7 @@ export function ToolResultView({ ui }: { ui: ToolUI }) {
         <div className="flex items-center justify-between border-b px-3.5 py-2 text-[13px]"><span className="font-medium">Draft {ui.channel} message · {ui.customer}</span><AiChip label="Draft" /></div>
         <pre className="whitespace-pre-wrap px-3.5 py-3 font-sans text-[13px] leading-relaxed">{ui.text}</pre>
         <div className="flex flex-wrap items-center gap-2 border-t px-3.5 py-2.5">
-          <Button size="sm" onClick={() => { addAudit({ id: `au_new_${Date.now()}`, at: new Date().toISOString(), actor: PERSONAS.find((p) => p.role === role)!.name, action: "message.queued", entity: "Customer", ref: ui.customer, source: "ai_proposal", detail: `${ui.channel} collection follow-up queued (simulated, not sent)` }); toast.success("Queued in the outbox (simulated)", { description: "Nothing was sent. Connect WhatsApp in Integrations to deliver for real." }); }}><MessageCircle />Send via {ui.channel}</Button>
+          <Button size="sm" onClick={() => { run("QueueMessage", { customerId: ui.customerId, channel: ui.channel, text: ui.text }, { source: "ai_proposal" }); }}><MessageCircle />Send via {ui.channel}</Button>
           <Button size="sm" variant="outline" onClick={() => { void navigator.clipboard?.writeText(ui.text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? <Check /> : <Copy />}{copied ? "Copied" : "Copy"}</Button>
           <Button size="sm" variant="ghost" onClick={() => router.push(`/customers/${ui.customerId}`)}>Open customer</Button>
           <span className="ml-auto text-[11px] text-muted-foreground">Simulated send</span>

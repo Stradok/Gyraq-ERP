@@ -45,7 +45,7 @@ function RecCard({ r }: { r: Recommendation }) {
         </div>
         <div className="flex flex-row items-start gap-2 lg:flex-col lg:items-stretch">
           {acted ? <StatusBadge status={acted === "accepted" ? "approved" : "cancelled"} label={acted === "accepted" ? "PO created" : "Dismissed"} /> : <>
-            <Button size="sm" disabled={!canCreate} onClick={() => { const x = createPOFromRecommendation(r, qty); router.push(`/purchasing/orders/${x.po.id}`); }}>Create purchase order</Button>
+            <Button size="sm" disabled={!canCreate} onClick={() => { const x = createPOFromRecommendation(r, qty); if (x.ok) router.push(`/purchasing/orders/${(x.value as { id: string }).id}`); }}>Create purchase order</Button>
             <Button size="sm" variant="ghost" onClick={() => { actRec(r.id, "dismissed"); toast("Dismissed"); }}>Dismiss</Button>
           </>}
         </div>

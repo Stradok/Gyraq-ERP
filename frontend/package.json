@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:engine": "tsx tests/engine.test.ts"
+    "test:engine": "tsx tests/engine.test.ts",
+    "test:e2e": "node tests/e2e.mjs",
+    "test": "pnpm test:engine"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.72",

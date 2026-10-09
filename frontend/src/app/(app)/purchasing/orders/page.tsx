@@ -11,16 +11,17 @@ import { getDB, idx } from "@/lib/data/queries";
 import type { PurchaseOrder } from "@/lib/data/types";
 import { dateShort, money, titleCase } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
 import { can } from "@/lib/rbac";
 
 export default function POs() {
+  useWorld((s) => s.version);
   const ov = useOverlay();
   const role = useERP((s) => s.role);
   const db = getDB();
   return (
     <>
-      <PageHeader module="purchasing" title="Purchasing" description="Purchase orders: Draft → Pending approval → Approved → Received. POs above Rs 1M need Owner approval." actions={can(role, "po.create") && <Button size="sm" asChild><Link href="/inventory/replenishment"><Plus />From recommendations</Link></Button>} />
+      <PageHeader module="purchasing" title="Purchasing" description="Purchase orders: Draft → Pending approval → Approved → Received. POs above Rs 1M need Owner approval." actions={can(role, "po.create") && <><Button size="sm" variant="outline" asChild><Link href="/inventory/replenishment">From recommendations</Link></Button><Button size="sm" asChild><Link href="/purchasing/orders/new"><Plus />New purchase order</Link></Button></>} />
       <Page>
         <DataTable<PurchaseOrder> rows={ov.pos} rowKey={(p) => p.id} rowHref={(p) => `/purchasing/orders/${p.id}`} exportName="purchase-orders" defaultSort={{ id: "date", dir: "desc" }} searchText={(p) => `${p.number} ${idx().sup.get(p.supplierId)?.name}`}
           views={[{ label: "Needs approval", filters: { status: "pending_approval" } }, { label: "In transit", filters: { status: "approved" } }, { label: "AI-proposed", filters: { src: "ai_proposal" } }]}

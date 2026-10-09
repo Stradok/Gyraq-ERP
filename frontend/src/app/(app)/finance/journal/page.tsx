@@ -16,31 +16,23 @@ import { MoneyText } from "@/components/app/entity";
 import { fiscalPeriods, getDB, glBalance, idx } from "@/lib/data/queries";
 import type { JournalEntry } from "@/lib/data/types";
 import { dateLong, dateShort, money, money2 } from "@/lib/format";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
+import { run } from "@/lib/engine/client";
 import { PERSONAS, can } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
-interface Prob { title: string; detail: string; recovery: string; ref: string }
+interface Prob { title: string; detail: string; recovery: string; ref: string; code?: string }
 function NewJE({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const db = getDB();
-  const { role, addAudit } = useERP();
   const [date, setDate] = useState(db.today);
   const [memo, setMemo] = useState("");
   const [lines, setLines] = useState([{ a: "6990", d: "", c: "" }, { a: "1100", d: "", c: "" }]);
   const [err, setErr] = useState<Prob | null>(null);
   const dr = lines.reduce((s, l) => s + (+l.d || 0), 0), cr = lines.reduce((s, l) => s + (+l.c || 0), 0), diff = Math.round((dr - cr) * 100) / 100;
-  const ref = () => `req_${Math.random().toString(36).slice(2, 10)}`;
   const post = () => {
-    const per = fiscalPeriods().find((p) => date >= p.start && date <= p.end);
-    const ctl = lines.find((l) => idx().acct.get(l.a)?.control);
-    if (!memo.trim()) return setErr({ title: "Add a memo", detail: "A journal entry needs a description so it can be audited later.", recovery: "Describe the reason for the entry.", ref: ref() });
-    if (diff !== 0) return setErr({ title: "Entry is not balanced", detail: `Debits (${money2(dr)}) and credits (${money2(cr)}) differ by ${money2(Math.abs(diff))}.`, recovery: "Adjust a line so total debits equal total credits.", ref: ref() });
-    if (ctl) return setErr({ title: "Control account can't be posted manually", detail: `${ctl.a} ${idx().acct.get(ctl.a)!.name} is a control account fed only by subledgers.`, recovery: "Post through an invoice, bill, payment or stock document instead.", ref: ref() });
-    if (!per || per.status === "future") return setErr({ title: "No fiscal period for that date", detail: "The posting date is outside the configured fiscal years.", recovery: "Choose a date inside FY25-26 or FY26-27.", ref: ref() });
-    if (per.status === "closed") return setErr({ title: "We couldn't post this entry because the period is closed", detail: `${per.name} is closed. Posting into a closed period is not allowed.`, recovery: "Change the posting date to an open period, or ask the Owner to reopen the period.", ref: ref() });
-    if (per.status === "soft_closed" && !can(role, "period.close")) return setErr({ title: "Period is soft-closed", detail: `${per.name} only accepts entries from the Finance Manager with a reason.`, recovery: "Use an open period or ask Finance to post it.", ref: ref() });
-    addAudit({ id: `au_new_${Date.now()}`, at: new Date().toISOString(), actor: PERSONAS.find((p) => p.role === role)!.name, action: dr > 500_000 ? "journal_entry.submitted" : "journal_entry.posted", entity: "Journal entry", ref: memo, source: "user", detail: `${money(dr)} · ${lines.map((l) => l.a).join("/")}` });
-    toast.success(dr > 500_000 ? "Sent for approval" : "Journal entry posted", { description: dr > 500_000 ? "Entries above Rs 500,000 need a second Finance approver." : `${money(dr)} balanced and recorded in ${per.name}.` });
+    const r = run("PostManualJE", { date, memo, lines: lines.map((l) => ({ account: l.a, debit: +l.d || 0, credit: +l.c || 0 })) }, { quiet: true });
+    if (!r.ok) { setErr({ ...r.error, ref: `req_${Math.random().toString(36).slice(2, 10)}` }); return; }
+    toast.success(r.message ?? "Journal entry posted");
     onOpenChange(false); setErr(null);
   };
   return (
@@ -69,6 +61,7 @@ function NewJE({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolea
 
 function Journal() {
   const sp = useSearchParams();
+  useWorld((s) => s.version);
   const db = getDB();
   const [tab, setTab] = useState(sp.get("account") ? "ledger" : "entries");
   const [acct, setAcct] = useState(sp.get("account") ?? "1200");
@@ -110,7 +103,7 @@ function Journal() {
               cols={[{ id: "d", header: "Date", cell: (r) => dateShort(r.j.date) }, { id: "n", header: "Entry", cell: (r) => <Mono>{r.j.number}</Mono> }, { id: "m", header: "Memo", cell: (r) => <span className="line-clamp-1">{r.j.memo}</span> }, { id: "dr", header: "Debit", cell: (r) => (r.debit ? money(r.debit) : ""), align: "right" }, { id: "cr", header: "Credit", cell: (r) => (r.credit ? money(r.credit) : ""), align: "right" }, { id: "b", header: "Balance", cell: (r) => <span className="font-medium">{money(r.bal)}</span>, align: "right" }]} /></TabsContent>
           <TabsContent value="coa"><Section flush><table className="w-full text-[13px]"><thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-2 text-left font-medium">Account</th><th className="px-3 py-2 text-left font-medium">Type</th><th className="hidden px-3 py-2 text-left font-medium md:table-cell">Group</th><th className="px-4 py-2 text-right font-medium">Balance</th></tr></thead><tbody>{db.accounts.map((a) => <tr key={a.code} onClick={() => { setAcct(a.code); setTab("ledger"); }} className="cursor-pointer border-b last:border-0 hover:bg-accent/40"><td className="px-4 py-1.5"><Mono className="mr-2 text-muted-foreground">{a.code}</Mono>{a.name}{a.control && <span className="ml-2 rounded border px-1 text-[10px] text-muted-foreground">control</span>}</td><td className="px-3 capitalize text-muted-foreground">{a.type}</td><td className="hidden px-3 text-muted-foreground md:table-cell">{a.group}</td><td className="px-4 text-right tabular">{money(glBalance(a.code, db.today))}</td></tr>)}</tbody></table></Section></TabsContent>
           <TabsContent value="periods"><div className="grid gap-4 lg:grid-cols-3"><Section title="Fiscal periods" description="July–June fiscal year" className="lg:col-span-2" flush><table className="w-full text-[13px]"><tbody>{periods.filter((p) => p.status !== "future").map((p) => <tr key={p.id} className="border-b last:border-0"><td className="px-4 py-2">{p.name}</td><td className="px-4 text-right"><StatusBadge status={p.status === "closed" ? "cancelled" : p.status === "soft_closed" ? "pending" : "active"} label={p.status.replace("_", "-")} /></td></tr>)}</tbody></table></Section>
-            <Section title="Close checklist" description={periods.find((p) => p.status === "open")?.name}><ul className="space-y-2 text-[13px]">{checklist.map((c) => <li key={c.label} className="flex items-start justify-between gap-3"><span className="text-muted-foreground">{c.label}</span><span className={cn("tabular", c.n ? "text-warning" : "text-success")}>{c.n ? c.n : "✓"}</span></li>)}</ul><Button className="mt-4 w-full" size="sm" variant="outline" disabled={!can(role, "period.close")} onClick={() => toast.info("Close is blocked until the checklist is clear", { description: "Resolve open items, then close. Reopening later needs Owner approval." })}>Close period</Button></Section></div></TabsContent>
+            <Section title="Close checklist" description={periods.find((p) => p.status === "open")?.name}><ul className="space-y-2 text-[13px]">{checklist.map((c) => <li key={c.label} className="flex items-start justify-between gap-3"><span className="text-muted-foreground">{c.label}</span><span className={cn("tabular", c.n ? "text-warning" : "text-success")}>{c.n ? c.n : "✓"}</span></li>)}</ul><Button className="mt-4 w-full" size="sm" variant="outline" disabled={!can(role, "period.close")} onClick={() => { const per = periods.find((p) => p.status === "open"); if (per) run("ClosePeriod", { periodId: per.id }); }}>Close period</Button></Section></div></TabsContent>
         </Tabs>
       </Page>
     </>

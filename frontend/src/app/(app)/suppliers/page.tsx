@@ -6,14 +6,25 @@ import { MoneyText } from "@/components/app/entity";
 import { getDB, supplierStats } from "@/lib/data/queries";
 import type { Supplier } from "@/lib/data/types";
 import { money } from "@/lib/format";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { NewSupplierDialog } from "@/components/app/forms";
+import { useERP, useWorld } from "@/lib/store";
+import { can } from "@/lib/rbac";
 
 export default function Suppliers() {
+  useWorld((s) => s.version);
+  const router = useRouter();
+  const role = useERP((s) => s.role);
+  const [openNew, setOpenNew] = useState(false);
   const db = getDB();
   const rows = useMemo(() => db.suppliers.map((s) => ({ s, st: supplierStats(s.id) })), [db]);
   return (
     <>
-      <PageHeader title="Suppliers" description="Principals and service vendors: spend, payables, lead time and reliability." />
+      <PageHeader title="Suppliers" description="Principals and service vendors: spend, payables, lead time and reliability." actions={can(role, "master.create") && <Button size="sm" onClick={() => setOpenNew(true)}><Plus />New supplier</Button>} />
+      <NewSupplierDialog open={openNew} onOpenChange={setOpenNew} onCreated={(id) => router.push(`/suppliers/${id}`)} />
       <Page>
         <DataTable rows={rows} rowKey={(r) => r.s.id} rowHref={(r) => `/suppliers/${r.s.id}`} exportName="suppliers" searchText={(r) => `${r.s.name} ${r.s.code} ${r.s.city}`} defaultSort={{ id: "spend", dir: "desc" }}
           filters={[{ id: "k", label: "Type", options: [{ value: "goods", label: "Goods" }, { value: "services", label: "Services" }], test: (r, v) => r.s.kind === v }, { id: "p", label: "Principal", options: [{ value: "y", label: "Principal" }], test: (r) => r.s.isPrincipal }]}

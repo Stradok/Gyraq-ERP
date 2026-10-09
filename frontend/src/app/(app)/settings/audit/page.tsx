@@ -4,15 +4,13 @@ import { DataTable } from "@/components/app/data-table";
 import { AiChip } from "@/components/app/ai";
 import { Mono } from "@/components/app/status";
 import { getDB } from "@/lib/data/queries";
-import { useERP } from "@/lib/store";
-import { useMounted } from "@/lib/hooks";
+import { useWorld } from "@/lib/store";
 import type { AuditEvent } from "@/lib/data/types";
 import { dateShort } from "@/lib/format";
 
 export default function Audit() {
-  const extra = useERP((s) => s.extraAudit);
-  const mounted = useMounted();
-  const rows = [...(mounted ? extra : []), ...getDB().audit];
+  useWorld((s) => s.version);
+  const rows = getDB().audit;
   return (
     <>
       <PageHeader module="settings" title="Settings" description="Append-only audit trail of sensitive actions, with source (person, AI proposal, system) and approval references." />

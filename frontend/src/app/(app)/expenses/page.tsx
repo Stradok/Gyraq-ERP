@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { Camera } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,35 +13,41 @@ import { MoneyText, empName } from "@/components/app/entity";
 import { getDB } from "@/lib/data/queries";
 import type { Expense } from "@/lib/data/types";
 import { dateShort, money, titleCase } from "@/lib/format";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
+import { run } from "@/lib/engine/client";
 import { PERSONAS } from "@/lib/rbac";
 
 function Submit({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [step, setStep] = useState<"form" | "scan" | "review">("form");
-  const [cat, setCat] = useState("Fuel");
-  const { role, addAudit } = useERP();
+  const role = useERP((s) => s.role);
   const db = getDB();
+  const me = db.employees.find((e) => e.name === PERSONAS.find((p) => p.role === role)!.empName)!;
+  const [f, setF] = useState({ category: "Fuel", merchant: "", amount: "", purpose: "", date: db.today, receipt: false });
+  const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }));
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setStep("form"); }}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Submit expense</DialogTitle><DialogDescription>Take a photo of the receipt. The amount, merchant and category are read for you.</DialogDescription></DialogHeader>
-        {step === "form" && <div className="space-y-3"><button onClick={() => { setStep("scan"); setTimeout(() => setStep("review"), 1100); }} className="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground"><Camera className="size-6" />Capture or upload receipt (sample)</button><p className="text-[11px] text-muted-foreground">Demo uses a sample receipt. Live OCR runs through the same review screen.</p></div>}
-        {step === "scan" && <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><span className="ai-dot size-2 rounded-full bg-ai" />Reading receipt…</div>}
+        <DialogHeader><DialogTitle>Submit expense</DialogTitle><DialogDescription>Capture the receipt and the fields are read for you, or type them in.</DialogDescription></DialogHeader>
+        {step === "form" && <div className="space-y-3"><button onClick={() => { setStep("scan"); setTimeout(() => { setF({ category: "Fuel", merchant: "Petro Plus Fuel Station", amount: "8450", purpose: "Fuel – route visit", date: db.today, receipt: true }); setStep("review"); }, 900); }} className="flex h-24 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground"><Camera className="size-5" />Capture or upload receipt (sample)</button><button className="text-xs text-primary hover:underline" onClick={() => setStep("review")}>Enter manually instead</button></div>}
+        {step === "scan" && <div className="flex h-24 items-center justify-center gap-2 text-sm text-muted-foreground"><span className="ai-dot size-2 rounded-full bg-ai" />Reading receipt…</div>}
         {step === "review" && (
           <div className="space-y-3 text-[13px]">
-            <div className="flex items-center gap-2"><AiChip label="Extracted" /><span className="text-xs text-muted-foreground">Check the fields, then submit</span></div>
-            <div className="grid grid-cols-2 gap-3"><div className="space-y-1"><div className="text-xs text-muted-foreground">Merchant</div><Input defaultValue="Petro Plus Fuel Station" /></div><div className="space-y-1"><div className="text-xs text-muted-foreground">Amount (PKR)</div><Input defaultValue="8,450" className="tabular" /></div></div>
-            <div className="space-y-1"><div className="text-xs text-muted-foreground">Category (suggested)</div><Select value={cat} onValueChange={setCat}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Fuel", "Travel", "Meals", "Office", "Repairs", "Telephone", "Entertainment"].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
-            <ul className="space-y-1 rounded-md border p-2.5 text-xs"><li className="text-success">✓ No duplicate found</li><li className="text-success">✓ Within Fuel policy limit (Rs 15,000)</li><li className="text-muted-foreground">Proposed GL account: 6040 Fuel &amp; Vehicle Running</li></ul>
+            {f.receipt && <div className="flex items-center gap-2"><AiChip label="Extracted" /><span className="text-xs text-muted-foreground">Check the fields, then submit</span></div>}
+            <div className="grid grid-cols-2 gap-3"><div className="space-y-1"><label htmlFor="exm" className="text-xs text-muted-foreground">Merchant</label><Input id="exm" value={f.merchant} onChange={(e) => set("merchant", e.target.value)} /></div><div className="space-y-1"><label htmlFor="exa" className="text-xs text-muted-foreground">Amount (PKR)</label><Input id="exa" inputMode="numeric" className="tabular" value={f.amount} onChange={(e) => set("amount", e.target.value.replace(/\D/g, ""))} /></div></div>
+            <div className="grid grid-cols-2 gap-3"><div className="space-y-1"><div className="text-xs text-muted-foreground">Category</div><Select value={f.category} onValueChange={(v) => set("category", v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Fuel", "Travel", "Meals", "Office", "Repairs", "Telephone", "Entertainment"].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><label htmlFor="exd" className="text-xs text-muted-foreground">Date</label><Input id="exd" type="date" value={f.date} onChange={(e) => set("date", e.target.value)} /></div></div>
+            <div className="space-y-1"><label htmlFor="exp" className="text-xs text-muted-foreground">Business purpose</label><Input id="exp" value={f.purpose} onChange={(e) => set("purpose", e.target.value)} placeholder="e.g. route visit, client meeting" /></div>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={f.receipt} onChange={(e) => set("receipt", e.target.checked)} />Receipt attached</label>
+            <p className="text-[11px] text-muted-foreground">Checks run on submit: category limit, receipt, duplicates. Flagged expenses go to Finance too.</p>
           </div>
         )}
-        <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>{step === "review" && <Button onClick={() => { addAudit({ id: `au_new_${Date.now()}`, at: new Date().toISOString(), actor: PERSONAS.find((p) => p.role === role)!.name, action: "expense.submitted", entity: "Expense", ref: "EXP-new", source: "user", detail: "Rs 8,450 · Fuel · receipt read by AI" }); toast.success("Expense submitted", { description: "Routed to your manager, then Finance." }); onOpenChange(false); setStep("form"); }}>Submit expense</Button>}</DialogFooter>
+        <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>{step === "review" && <Button onClick={() => { const r = run("SubmitExpense", { employeeId: me.id, category: f.category, merchant: f.merchant, amount: +f.amount, purpose: f.purpose, date: f.date, hasReceipt: f.receipt }); if (r.ok) { onOpenChange(false); setStep("form"); } }}>Submit expense</Button>}</DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
 export default function Expenses() {
+  useWorld((s) => s.version);
   const db = getDB();
   const role = useERP((s) => s.role);
   const [open, setOpen] = useState(false);

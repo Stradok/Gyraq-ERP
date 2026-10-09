@@ -8,6 +8,7 @@ import { DefaultChatTransport } from "ai";
 import { answerLocal } from "./local";
 import type { ToolResult } from "./tools";
 import { withBase } from "../config";
+import { useERP } from "../store";
 
 export interface VMsg { id: string; role: "user" | "assistant"; text: string; steps: { name: string; done: boolean }[]; results: ToolResult[]; computed?: boolean; suggestions?: string[]; insufficient?: boolean }
 export interface LlmStatus { enabled: boolean; model: string; provider: string }
@@ -21,7 +22,7 @@ export function useAssistant(user: { name: string; title: string }) {
   const topic = useRef<string | undefined>(undefined);
   const handled = useRef(new Set<string>());
   useEffect(() => { fetch(withBase("/api/ai/status")).then((r) => r.json()).then(setLlm).catch(() => setLlm({ enabled: false, model: "", provider: "" })); }, []);
-  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: { user, page: pathname } }) });
+  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: () => ({ user, page: pathname, commands: useERP.getState().commands, anchor: useERP.getState().anchor }) }) });
   const useLlm = !!llm?.enabled;
 
   const llmMsgs: VMsg[] = useMemo(() => chat.messages.map((m) => {

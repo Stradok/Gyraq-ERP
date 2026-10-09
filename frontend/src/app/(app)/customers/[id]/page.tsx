@@ -19,15 +19,20 @@ import { BUCKETS, customerStats, getDB, idx, invoiceStatusLabel, openInvoices } 
 import { addDays, monthKey } from "@/lib/data/dates";
 import { dateShort, money, moneyCompact, monthLabel, titleCase } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
+import { run } from "@/lib/engine/client";
+import { CreditLimitDialog } from "@/components/app/forms";
+import { PERSONAS } from "@/lib/rbac";
 import { can } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  useWorld((s) => s.version);
   const ov = useOverlay();
   const role = useERP((s) => s.role);
+  const [limitOpen, setLimitOpen] = useState(false);
   const c = idx().cus.get(id);
   const db = getDB();
   const s = useMemo(() => (c ? customerStats(id) : null), [c, id]);
@@ -52,13 +57,17 @@ export default function CustomerDetail() {
         meta={<div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px]"><span><span className="text-muted-foreground">Credit limit </span><b className="tabular font-medium">{money(c.creditLimit)}</b></span><span><span className="text-muted-foreground">Outstanding </span><b className={cn("tabular font-medium", util > 100 && "text-danger")}>{money(outstanding)}</b></span><span><span className="text-muted-foreground">Overdue </span><b className={cn("tabular font-medium", s.overdue > 0 && "text-danger")}>{money(s.overdue)}</b></span><span><span className="text-muted-foreground">Terms </span><b className="font-medium">{c.termsDays} days</b></span></div>}
         actions={<>
           {can(role, "order.create") && <Button size="sm" asChild><Link href="/sales/orders/new">Create order</Link></Button>}
+          {can(role, "approve.credit") && <Button size="sm" variant="outline" onClick={() => setLimitOpen(true)}>Change limit</Button>}
+          {can(role, "approve.credit") && (c.status === "on_hold" ? <Button size="sm" variant="outline" onClick={() => run("ReleaseCreditHold", { customerId: id })}>Release hold</Button> : <Button size="sm" variant="outline" onClick={() => run("RequestCreditHold", { customerId: id, reason: "Placed on hold from the customer page" })}>Credit hold</Button>)}
           {can(role, "payment.record") && outstanding > 0 && <RecordPaymentDialog customerId={id} trigger={<Button size="sm" variant="outline">Record payment</Button>} />}
           <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline">Contact</Button></DropdownMenuTrigger><DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => toast.info("Simulated: call logged", { description: `${c.contact} · ${c.phone}` })}><Phone />Call {c.contact}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => toast.info("Simulated: WhatsApp queued", { description: "Nothing was sent; see Integrations → outbox." })}><MessageCircle />WhatsApp</DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push(`/ai?q=${encodeURIComponent(`Draft a collection follow-up for ${c.name}`)}`)}><Mail />Draft follow-up with AI</DropdownMenuItem>
           </DropdownMenuContent></DropdownMenu></>} />
+      <CreditLimitDialog key={String(limitOpen)} open={limitOpen} onOpenChange={setLimitOpen} customerId={id} requestedBy={PERSONAS.find((p) => p.role === role)!.name} />
       <Page>
+        {c.status === "on_hold" && <div className="rounded-lg border border-warning/40 bg-warning/5 px-4 py-3 text-[13px]"><b>On credit hold.</b> {c.holdReason ?? ""} New orders are blocked until the hold is released.</div>}
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="min-w-0 lg:col-span-2">
             <Tabs value={tab} onValueChange={setTab}>

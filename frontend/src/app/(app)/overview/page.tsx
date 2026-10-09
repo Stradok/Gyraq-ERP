@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { ArrowRight, Check, X } from "lucide-react";
-import { toast } from "sonner";
+import { run } from "@/lib/engine/client";
 import { Button } from "@/components/ui/button";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { Kpi } from "@/components/app/kpi";
@@ -22,7 +22,6 @@ const pctChange = (a: number, b: number) => (b ? (a / b - 1) * 100 : 0);
 
 export default function OverviewPage() {
   const role = useERP((s) => s.role);
-  const decide = useERP((s) => s.decide);
   const dismissed = useERP((s) => s.dismissed);
   const ov = useOverlay();
   const approvals = useApprovals();
@@ -120,8 +119,8 @@ export default function OverviewPage() {
                     </div>
                     {can(role, "approve.finance") || can(role, "approve.po") ? (
                       <div className="flex gap-1">
-                        <Button size="icon-sm" variant="outline" aria-label="Approve" onClick={() => { decide(a.id, { decision: "approved", at: new Date().toISOString(), by: persona.name }); toast.success("Approved", { description: a.title }); }}><Check /></Button>
-                        <Button size="icon-sm" variant="ghost" aria-label="Reject" onClick={() => { decide(a.id, { decision: "rejected", at: new Date().toISOString(), by: persona.name }); toast("Rejected", { description: a.title }); }}><X /></Button>
+                        <Button size="icon-sm" variant="outline" aria-label="Approve" onClick={() => { run("DecideApproval", { id: a.id, decision: "approved" }); }}><Check /></Button>
+                        <Button size="icon-sm" variant="ghost" aria-label="Reject" onClick={() => { run("DecideApproval", { id: a.id, decision: "rejected" }); }}><X /></Button>
                       </div>
                     ) : <StatusBadge status="pending" />}
                   </li>

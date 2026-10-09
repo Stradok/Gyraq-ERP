@@ -109,3 +109,26 @@ export function requestCreditLimit(ctx: Ctx, p: RequestCreditLimit): Result<{ ap
   notify(ctx, "Approval requested", a.title, "info", "/approvals");
   return ok({ approvalId: a.id }, "Sent for approval");
 }
+
+export function requestCreditHold(ctx: Ctx, p: { customerId: string; reason: string }): Result<{ approvalId: string }> {
+  const c = ctx.db.customers.find((x) => x.id === p.customerId);
+  if (!c) return fail("CUS_NOT_FOUND", "Customer not found", "It may have been removed.", "Refresh the page.");
+  if (c.status === "on_hold") return fail("CUS_ON_HOLD", "Already on credit hold", `${c.name} is already on hold.`, "Release the hold first if you want to change it.");
+  if (ctx.db.approvals.some((a) => a.type === "credit_limit" && a.ref === c.id && a.status === "pending" && a.title.startsWith("Credit hold"))) return fail("CUS_HOLD_PENDING", "A hold request is already waiting", "The Sales Manager hasn't decided yet.", "Open Approvals.");
+  const s = customerStats(c.id);
+  const a = { id: newId("apr"), type: "credit_limit" as const, title: `Credit hold – ${c.name}`, subtitle: `${p.reason} · overdue ${money(s.overdue)}`, amount: null, requestedBy: ctx.actor, requestedAt: ctx.date, status: "pending" as const, ref: c.id, source: ctx.source === "ai_proposal" ? "ai" as const : "user" as const, step: "Sales Manager" };
+  ctx.db.approvals.unshift(a);
+  audit(ctx, ctx.source === "ai_proposal" ? "ai_proposal.confirmed" : "customer.credit_hold_requested", "Customer", c.code, p.reason);
+  notify(ctx, "Credit hold requested", c.name, "warning", "/approvals");
+  return ok({ approvalId: a.id }, "Credit hold sent for approval");
+}
+
+export function releaseCreditHold(ctx: Ctx, p: { customerId: string }): Result {
+  const c = ctx.db.customers.find((x) => x.id === p.customerId);
+  if (!c || c.status !== "on_hold") return fail("CUS_NOT_ON_HOLD", "Customer isn't on hold", "There is nothing to release.", "Open the customer to check its status.");
+  const s = customerStats(c.id);
+  if (s.overdue > 0) return fail("CUS_OVERDUE", "Overdue invoices are still open", `${c.name} still owes ${money(s.overdue)} past due.`, "Collect the overdue balance first, or ask the Owner to override.");
+  c.status = "active"; c.holdReason = undefined;
+  audit(ctx, "customer.hold_released", "Customer", c.code, c.name);
+  return ok(undefined, `${c.name} released from credit hold`);
+}

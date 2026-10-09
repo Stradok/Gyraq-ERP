@@ -683,7 +683,8 @@ export function fiscalPeriods() {
       const d = new Date(Date.UTC(start, 6 + i, 1));
       const s = d.toISOString().slice(0, 10), e = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
       const label = `P${String(i + 1).padStart(2, "0")} FY${String(start).slice(2)}-${String(start + 1).slice(2)}`;
-      const status = e < "2026-07-01" ? "closed" : e < `${t.slice(0, 7)}-01` ? "soft_closed" : s <= t ? "open" : "future";
+      const computed = e < "2026-07-01" ? "closed" : e < `${t.slice(0, 7)}-01` ? "soft_closed" : s <= t ? "open" : "future";
+      const status = (db.periodStatus[label] ?? computed) as "closed" | "soft_closed" | "open" | "future";
       out.push({ id: label, name: `${label} (${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${d.getUTCFullYear()})`, start: s, end: e, status });
     }
   };

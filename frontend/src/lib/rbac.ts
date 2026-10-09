@@ -30,8 +30,15 @@ export const ROLE_MODULES: Record<Role, Module[]> = {
 };
 export const canSee = (r: Role, m: Module) => ROLE_MODULES[r].includes(m);
 
-export type Action = "approve.po" | "approve.finance" | "approve.credit" | "approve.expense" | "ai.confirm" | "po.create" | "payment.record" | "order.create" | "period.close";
+export type Action = "warehouse.ops" | "po.receive" | "master.create" | "stock.adjust" | "bill.create" | "supplier.pay" | "return.create" | "approve.po" | "approve.finance" | "approve.credit" | "approve.expense" | "ai.confirm" | "po.create" | "payment.record" | "order.create" | "period.close";
 const ACTIONS: Record<Action, Role[]> = {
+  "warehouse.ops": ["owner", "admin", "warehouse", "sales_manager"],
+  "po.receive": ["owner", "admin", "warehouse", "procurement"],
+  "master.create": ["owner", "admin", "sales_manager", "procurement", "finance"],
+  "stock.adjust": ["owner", "admin", "warehouse", "finance"],
+  "bill.create": ["owner", "admin", "finance", "procurement"],
+  "supplier.pay": ["owner", "admin", "finance"],
+  "return.create": ["owner", "admin", "sales_manager", "finance", "warehouse"],
   "approve.po": ["owner", "admin", "procurement"],
   "approve.finance": ["owner", "admin", "finance"],
   "approve.credit": ["owner", "admin", "sales_manager", "finance"],

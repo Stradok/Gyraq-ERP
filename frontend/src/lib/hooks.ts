@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { getDB, idx } from "./data/queries";
 import type { Approval } from "./data/types";
-import { useERP } from "./store";
+import { useERP, useWorld } from "./store";
 
 /** True after first client render – use to avoid hydration mismatches on persisted state. */
 export function useMounted() {
@@ -12,17 +12,12 @@ export function useMounted() {
 }
 
 export function useApprovals(): (Approval & { decided?: "approved" | "rejected" })[] {
-  const { extraApprovals, decisions } = useERP();
-  const mounted = useMounted();
-  const base = getDB().approvals;
-  const all = [...(mounted ? extraApprovals : []), ...base];
-  return all.map((a) => {
-    const d = mounted ? decisions[a.id] : undefined;
-    return d ? { ...a, status: d.decision, decided: d.decision } : a;
-  });
+  useWorld((s) => s.version);
+  return getDB().approvals.map((a) => (a.status !== "pending" && a.decidedAt ? { ...a, decided: a.status as "approved" | "rejected" } : a));
 }
 
 export function useNotifications() {
+  useWorld((s) => s.version);
   const { readNotifs } = useERP();
   const mounted = useMounted();
   return getDB().notifications.map((n) => ({ ...n, read: n.read || (mounted && readNotifs.includes(n.id)) }));

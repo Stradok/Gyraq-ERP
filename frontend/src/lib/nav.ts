@@ -22,14 +22,14 @@ export const NAV: NavItem[] = [
 
 export const TABS: Partial<Record<Module, { label: string; href: string }[]>> = {
   sales: [
-    { label: "Orders", href: "/sales/orders" }, { label: "Quotations", href: "/sales/quotes" }, { label: "Invoices", href: "/sales/invoices" },
+    { label: "Orders", href: "/sales/orders" }, { label: "Quotations", href: "/sales/quotes" }, { label: "Invoices", href: "/sales/invoices" }, { label: "Challans", href: "/sales/shipments" },
     { label: "Payments", href: "/sales/payments" }, { label: "Returns", href: "/sales/returns" }, { label: "Leads", href: "/sales/leads" },
   ],
   inventory: [
     { label: "Products", href: "/inventory" }, { label: "Replenishment", href: "/inventory/replenishment" }, { label: "Stock position", href: "/inventory/stock" }, { label: "Expiry", href: "/inventory/expiry" },
   ],
   purchasing: [
-    { label: "Purchase orders", href: "/purchasing/orders" }, { label: "Goods receipts", href: "/purchasing/receipts" }, { label: "Supplier bills", href: "/purchasing/bills" }, { label: "Payments", href: "/purchasing/payments" },
+    { label: "Purchase orders", href: "/purchasing/orders" }, { label: "Goods receipts", href: "/purchasing/receipts" }, { label: "Supplier bills", href: "/purchasing/bills" }, { label: "Payments", href: "/purchasing/payments" }, { label: "Claims", href: "/purchasing/claims" },
   ],
   finance: [
     { label: "Statements", href: "/finance/statements" }, { label: "Cash-flow forecast", href: "/finance/cashflow" }, { label: "Receivables", href: "/finance/receivables" }, { label: "Payables", href: "/finance/payables" },

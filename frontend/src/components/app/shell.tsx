@@ -16,7 +16,8 @@ import { CommandPalette } from "./command-palette";
 import { AssistantDock } from "./assistant-dock";
 import { NAV, titleFor } from "@/lib/nav";
 import { PERSONAS, ROLE_MODULES, canSee } from "@/lib/rbac";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
+import { replayAll } from "@/lib/engine/client";
 import { useApprovals, useMounted } from "@/lib/hooks";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -128,7 +129,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pending = approvals.filter((a) => a.status === "pending").length;
   const persona = PERSONAS.find((p) => p.role === role)!;
 
-  useEffect(() => { void useERP.persist.rehydrate(); }, []);
+  const version = useWorld((s) => s.version);
+  useEffect(() => { void Promise.resolve(useERP.persist.rehydrate()).then(() => replayAll()); }, []);
   useEffect(() => { if (pathname) visit({ href: pathname, title: titleFor(pathname) }); }, [pathname, visit]);
   useEffect(() => {
     let last = 0;
@@ -219,12 +221,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => { reset(); router.push("/overview"); }}><RotateCcw />Reset demo data</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { reset(); setTimeout(() => window.location.reload(), 50); }}><RotateCcw />Reset demo data</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </header>
-        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+        <main key={version} className="min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
       <CommandPalette open={open} setOpen={setOpen} />
       <AssistantDock />

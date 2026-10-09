@@ -1,6 +1,6 @@
 "use client";
-import { Suspense, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Filter, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,18 @@ import { DataTable } from "@/components/app/data-table";
 import { RiskBadge, StatusBadge, Mono } from "@/components/app/status";
 import { MoneyText, empName } from "@/components/app/entity";
 import { getDB } from "@/lib/data/queries";
+import { NewCustomerDialog } from "@/components/app/forms";
+import { can } from "@/lib/rbac";
 import { customerRows, filterCustomers, type CustomerFilter, type CustomerRow } from "@/lib/nl";
 import { money, titleCase } from "@/lib/format";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 function Customers() {
   const sp = useSearchParams();
+  const router = useRouter();
+  const [openNew, setOpenNew] = useState(false);
+  useWorld((s) => s.version);
   const role = useERP((s) => s.role);
   const db = getDB();
   const f: CustomerFilter = useMemo(() => ({
@@ -32,7 +37,8 @@ function Customers() {
   const chips = [f.overdue && "Overdue", f.city && `City = ${f.city}`, f.minBalance && `Balance > ${money(f.minBalance)}`, f.minDays && `Overdue ≥ ${f.minDays} days`, f.band && `Risk = ${titleCase(f.band)}`].filter(Boolean) as string[];
   return (
     <>
-      <PageHeader module={undefined} title="Customers" description={role === "rep" ? "Your accounts" : "Accounts, credit exposure and AI-computed payment risk."} actions={<Button size="sm" variant="outline" disabled title="Customer creation form arrives with the backend"><Plus />New customer</Button>} />
+      <PageHeader module={undefined} title="Customers" description={role === "rep" ? "Your accounts" : "Accounts, credit exposure and AI-computed payment risk."} actions={can(role, "master.create") && <Button size="sm" onClick={() => setOpenNew(true)}><Plus />New customer</Button>} />
+      <NewCustomerDialog open={openNew} onOpenChange={setOpenNew} onCreated={(id) => router.push(`/customers/${id}`)} />
       <Page>
         {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs">

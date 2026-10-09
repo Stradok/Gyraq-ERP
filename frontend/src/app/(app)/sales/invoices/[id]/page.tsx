@@ -8,17 +8,21 @@ import { StatusBadge, Mono } from "@/components/app/status";
 import { CustomerLink, KeyValue, LinesTable, Totals, whCode } from "@/components/app/entity";
 import { FbrPanel } from "@/components/app/fbr";
 import { RecordPaymentDialog } from "@/components/app/record-payment";
+import { ReturnDialog } from "@/components/app/forms";
+import { useState } from "react";
 import { getDB, idx, invoiceStatusLabel } from "@/lib/data/queries";
 import { dateLong, dateShort, money } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
-import { useERP } from "@/lib/store";
+import { useERP, useWorld } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { diffDays } from "@/lib/data/dates";
 
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
+  useWorld((s) => s.version);
   const ov = useOverlay();
   const role = useERP((s) => s.role);
+  const [ret, setRet] = useState(false);
   const db = getDB();
   const base = idx().inv.get(id);
   if (!base) return <Page><p className="text-sm text-muted-foreground">Invoice not found.</p></Page>;
@@ -27,6 +31,7 @@ export default function InvoiceDetail() {
   const status = invoiceStatusLabel(inv, db.today);
   const pays = [...ov.payments, ...db.payments].filter((p) => p.allocations.some((a) => a.invoiceId === inv.id));
   const je = db.journal.filter((j) => j.source === `Invoice ${inv.number}`);
+  const sh = db.shipments.find((x) => x.invoiceId === inv.id);
   const cn = db.creditNotes.filter((x) => x.invoiceId === inv.id);
   const taxCats = new Map<string, number>();
   for (const l of inv.lines) { const p = idx().prod.get(l.productId)!; taxCats.set(p.taxCategory, (taxCats.get(p.taxCategory) ?? 0) + l.salesTax); }
@@ -35,7 +40,8 @@ export default function InvoiceDetail() {
     <>
       <PageHeader back={{ href: "/sales/invoices", label: "Invoices" }} title={<span className="flex items-center gap-3"><Mono className="text-xl">{inv.number}</Mono><StatusBadge status={status} /></span>}
         description={<span><CustomerLink id={inv.customerId} /> · issued {dateLong(inv.date)} · due {dateLong(inv.dueDate)}{status === "overdue" ? ` · ${overdueDays} days overdue` : ""}</span>}
-        actions={<><Button variant="outline" size="sm" onClick={() => window.print()}><Printer />Print / PDF</Button>{can(role, "payment.record") && inv.total - inv.paid > 0.5 && <RecordPaymentDialog customerId={inv.customerId} defaultAmount={inv.total - inv.paid} trigger={<Button size="sm">Record payment</Button>} />}</>} />
+        actions={<><Button variant="outline" size="sm" onClick={() => window.print()}><Printer />Print / PDF</Button>{can(role, "return.create") && <Button variant="outline" size="sm" onClick={() => setRet(true)}>Return / credit note</Button>}{can(role, "payment.record") && inv.total - inv.paid > 0.5 && <RecordPaymentDialog customerId={inv.customerId} defaultAmount={inv.total - inv.paid} trigger={<Button size="sm">Record payment</Button>} />}</>} />
+      {ret && <ReturnDialog open onOpenChange={setRet} invoiceId={inv.id} />}
       <Page>
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
@@ -60,7 +66,7 @@ export default function InvoiceDetail() {
           </div>
           <div className="space-y-4">
             <Section title="FBR e-invoice"><FbrPanel inv={inv} /></Section>
-            <Section title="Details"><KeyValue cols={1} items={[["Customer", <CustomerLink key="c" id={c.id} />], ["Buyer tax identity", c.registered ? `NTN ${c.ntn} · STRN ${c.strn}` : `Unregistered · CNIC ${c.cnic}`], ["ATL status", c.atl ? "Active taxpayer" : "Not on ATL"], ["Dispatched from", whCode(inv.warehouseId)], ["Sales order", <Link key="o" className="font-mono text-xs hover:text-primary" href={`/sales/orders/${inv.orderId}`}>{idx().db.orders.find((o) => o.id === inv.orderId)?.number}</Link>], ["Payment terms", `${c.termsDays} days`], ["Tax basis", [...taxCats.keys()].map((k) => (k === "third_schedule" ? "Retail price (3rd Sch.)" : k === "exempt" ? "Exempt" : "Standard 18%")).join(" · ")]]} /></Section>
+            <Section title="Details"><KeyValue cols={1} items={[["Customer", <CustomerLink key="c" id={c.id} />], ["Buyer tax identity", c.registered ? `NTN ${c.ntn} · STRN ${c.strn}` : `Unregistered · CNIC ${c.cnic}`], ["ATL status", c.atl ? "Active taxpayer" : "Not on ATL"], ["Dispatched from", whCode(inv.warehouseId)], ["Sales order", <Link key="o" className="font-mono text-xs hover:text-primary" href={`/sales/orders/${inv.orderId}`}>{idx().db.orders.find((o) => o.id === inv.orderId)?.number}</Link>], ["Payment terms", `${c.termsDays} days`], ["Delivery challan", sh ? <Link key="sh" href={`/sales/shipments/${sh.id}`} className="font-mono text-xs hover:text-primary">{sh.number}</Link> : "Dispatched before challans were tracked"], ["Tax basis", [...taxCats.keys()].map((k) => (k === "third_schedule" ? "Retail price (3rd Sch.)" : k === "exempt" ? "Exempt" : "Standard 18%")).join(" · ")]]} /></Section>
             <Section title="Payments" flush>
               {pays.length === 0 ? <p className="px-4 py-5 text-center text-xs text-muted-foreground">No payments recorded.</p> : (
                 <ul className="divide-y">{pays.map((p) => (<li key={p.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px]"><div><Mono>{p.number}</Mono><div className="text-xs text-muted-foreground">{dateShort(p.date)} · {p.method.replace("_", " ")}</div></div><div className="text-right"><div className="tabular">{money(p.allocations.find((a) => a.invoiceId === inv.id)!.amount)}</div><StatusBadge status={p.status} /></div></li>))}</ul>
