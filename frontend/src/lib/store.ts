@@ -8,6 +8,8 @@ import type { CommandRecord } from "./engine/commands";
 
 export interface RecentItem { href: string; title: string }
 
+export interface SavedView { label: string; filters: Record<string, string>; search: string }
+
 interface State {
   role: Role;
   collapsed: boolean;
@@ -17,6 +19,7 @@ interface State {
   readNotifs: string[];
   actedRecs: Record<string, "accepted" | "dismissed">;
   mutedTypes: string[];
+  savedViews: Record<string, SavedView[]>;
   history: { id: string; q: string; at: string }[];
   commands: CommandRecord[];
   cmdSeq: number;
@@ -29,11 +32,13 @@ interface State {
   markRead: (ids: string[]) => void;
   actRec: (id: string, v: "accepted" | "dismissed") => void;
   toggleMuted: (k: string) => void;
+  saveView: (table: string, v: SavedView) => void;
+  deleteView: (table: string, label: string) => void;
   addHistory: (q: string) => void;
   reset: () => void;
 }
 
-const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
+const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], savedViews: {} as Record<string, SavedView[]>, history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
 
 export const useERP = create<State>()(
   persist(
@@ -47,6 +52,8 @@ export const useERP = create<State>()(
       markRead: (ids) => set((s) => ({ readNotifs: [...new Set([...s.readNotifs, ...ids])] })),
       actRec: (id, v) => set((s) => ({ actedRecs: { ...s.actedRecs, [id]: v } })),
       toggleMuted: (k) => set((s) => ({ mutedTypes: s.mutedTypes.includes(k) ? s.mutedTypes.filter((x) => x !== k) : [...s.mutedTypes, k] })),
+      saveView: (t, v) => set((s) => ({ savedViews: { ...s.savedViews, [t]: [...(s.savedViews[t] ?? []).filter((x) => x.label !== v.label), v] } })),
+      deleteView: (t, label) => set((s) => ({ savedViews: { ...s.savedViews, [t]: (s.savedViews[t] ?? []).filter((x) => x.label !== label) } })),
       addHistory: (q) => set((s) => ({ history: [{ id: String(Date.now()), q, at: new Date().toISOString() }, ...s.history.filter((h) => h.q !== q)].slice(0, 12) })),
       reset: () => set({ ...initial }),
     }),

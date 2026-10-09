@@ -3,8 +3,8 @@
 // keyboard navigation (j/k/↵), CSV export, pagination. Client-side over in-memory demo data; the same props
 // map onto server-side pagination/filtering when the API arrives (docs/plan/08 §4).
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Download, Search, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, Columns3, Download, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "./page-header";
+import { useERP } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export interface Col<T> {
@@ -66,6 +67,11 @@ export function DataTable<T>(p: Props<T>) {
   const [focus, setFocus] = useState(-1);
   const wrap = useRef<HTMLDivElement>(null);
   const [activeView, setActiveView] = useState<string | null>(null);
+  const table = usePathname();
+  const saved = useERP((s) => s.savedViews[table]) ?? [];
+  const saveView = useERP((s) => s.saveView);
+  const deleteView = useERP((s) => s.deleteView);
+  const dirty = !activeView && (q.trim() !== "" || Object.values(fv).some((v) => v && v !== "all"));
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -112,12 +118,17 @@ export function DataTable<T>(p: Props<T>) {
 
   return (
     <div className={cn("overflow-hidden rounded-lg border bg-card", p.className)}>
-      {p.views && (
-        <div className="flex gap-1 overflow-x-auto border-b px-2 py-1.5">
-          {[{ label: "All" } as ViewDef, ...p.views].map((v) => {
+      {(p.views || saved.length > 0 || dirty) && (
+        <div className="flex items-center gap-1 overflow-x-auto border-b px-2 py-1.5">
+          {[{ label: "All" } as ViewDef, ...(p.views ?? []), ...saved].map((v) => {
             const on = (v.label === "All" && !activeView) || activeView === v.label;
-            return <button key={v.label} onClick={() => applyView(v.label === "All" ? null : v)} className={cn("whitespace-nowrap rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground", on && "bg-accent font-medium text-foreground")}>{v.label}</button>;
+            const mine = saved.some((x) => x.label === v.label);
+            return <span key={v.label} className={cn("inline-flex items-center whitespace-nowrap rounded-md text-xs text-muted-foreground hover:bg-accent hover:text-foreground", on && "bg-accent font-medium text-foreground")}>
+              <button onClick={() => applyView(v.label === "All" ? null : v)} className="px-2.5 py-1">{mine && <Bookmark className="mr-1 inline size-3" />}{v.label}</button>
+              {mine && <button aria-label={`Delete view ${v.label}`} onClick={() => { deleteView(table, v.label); if (on) applyView(null); }} className="pr-1.5 hover:text-danger"><X className="size-3" /></button>}
+            </span>;
           })}
+          {dirty && <button onClick={() => { const label = window.prompt("Name this view")?.trim(); if (label) { saveView(table, { label, filters: fv, search: q }); setActiveView(label); } }} className="ml-1 whitespace-nowrap rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground hover:text-foreground">+ Save view</button>}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">

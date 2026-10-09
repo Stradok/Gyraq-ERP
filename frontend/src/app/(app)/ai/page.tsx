@@ -21,13 +21,13 @@ interface VMsg { id: string; role: "user" | "assistant"; text: string; steps: { 
 const STARTERS: Record<string, string[]> = {
   default: ["Show overdue customers in Karachi with balances over 1 million", "What inventory is at risk?", "Why is profit down this month?", "Which sales reps are underperforming?", "What are our biggest expenses?", "Find customers overdue by more than 60 days and draft follow-up messages"],
 };
-const HISTORY = ["Collections review", "Replenishment plan", "Profit variance, September", "Supplier price check"];
 
 function Chat() {
   const sp = useSearchParams();
   const role = useERP((s) => s.role);
   const persona = PERSONAS.find((p) => p.role === role)!;
   const [llm, setLlm] = useState<{ enabled: boolean; model: string; provider: string } | null>(null);
+  const history = useERP((s) => s.history);
   const [msgs, setMsgs] = useState<VMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,6 +46,7 @@ function Chat() {
 
   const send = async (text: string) => {
     const q = text.trim(); if (!q || busy) return;
+    useERP.getState().addHistory(q);
     setInput("");
     if (useLlm) { void chat.sendMessage({ text: q }); return; }
     const id = Date.now().toString();
@@ -73,7 +74,7 @@ function Chat() {
       <aside className="hidden flex-col border-r bg-subtle lg:flex">
         <div className="p-3"><Button variant="outline" size="sm" className="w-full" onClick={() => { setMsgs([]); chat.setMessages([]); topic.current = undefined; }}><Plus />New conversation</Button></div>
         <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">History</div>
-        <ul className="px-2 text-[13px]">{HISTORY.map((h) => <li key={h}><button onClick={() => void send(h === "Collections review" ? "Show overdue customers" : h === "Replenishment plan" ? "What inventory is at risk?" : h.startsWith("Profit") ? "Why is profit down this month?" : "Any supplier price anomalies?")} className="w-full truncate rounded-md px-2.5 py-1.5 text-left text-muted-foreground hover:bg-accent hover:text-foreground">{h}</button></li>)}</ul>
+        <ul className="px-2 text-[13px]">{history.length === 0 && <li className="px-2.5 py-1.5 text-xs text-muted-foreground">Your questions will show up here.</li>}{history.map((h) => <li key={h.id}><button onClick={() => void send(h.q)} className="w-full truncate rounded-md px-2.5 py-1.5 text-left text-muted-foreground hover:bg-accent hover:text-foreground">{h.q}</button></li>)}</ul>
       </aside>
       <section className="flex min-h-0 flex-col">
         <div className="flex-1 overflow-y-auto px-4 py-5 md:px-8">
