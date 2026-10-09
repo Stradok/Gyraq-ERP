@@ -1,8 +1,7 @@
 import { periodOf, assertPostable, audit, fail, money, newId, ok, postJE, r2, type Ctx, type Result } from "./core";
 import { can } from "../rbac";
-import type { JournalLine } from "../data/types";
+import type { JournalLine, Settings } from "../data/types";
 
-export const JE_APPROVAL_LIMIT = 500_000;
 export function postManualJE(ctx: Ctx, p: { date: string; memo: string; lines: JournalLine[] }): Result<{ pending: boolean }> {
   const db = ctx.db;
   const ls = p.lines.filter((l) => l.debit || l.credit);
@@ -16,10 +15,10 @@ export function postManualJE(ctx: Ctx, p: { date: string; memo: string; lines: J
   if (per.status === "closed") return fail("FIN_PERIOD_CLOSED", "We couldn't post this entry because the period is closed", `${per.name} is closed. Posting into a closed period is not allowed.`, "Change the posting date to an open period, or ask the Owner to reopen it.");
   if (per.status === "soft_closed" && !can(ctx.role, "period.close")) return fail("FIN_PERIOD_SOFT_CLOSED", "Period is soft-closed", `${per.name} only accepts entries from the Finance Manager.`, "Use an open period or ask Finance to post it.");
   if (per.status === "future") return fail("FIN_DATE_FUTURE", "Posting date is in the future", "Entries can't be dated after today.", "Use today's date.");
-  if (dr > JE_APPROVAL_LIMIT) {
+  if (dr > db.settings.jeApprovalLimit) {
     db.approvals.unshift({ id: newId("apr"), type: "journal", title: `Manual journal – ${p.memo}`, subtitle: `${money(dr)} · prepared by ${ctx.actor}`, amount: dr, requestedBy: ctx.actor, requestedAt: ctx.date, status: "pending", ref: newId("je"), source: "user", step: "Finance Manager", payload: { date: p.date, memo: p.memo, lines: JSON.stringify(ls) } });
     audit(ctx, "journal_entry.submitted", "Journal entry", p.memo, `${money(dr)} needs a second approver`);
-    return ok({ pending: true }, `Entries above ${money(JE_APPROVAL_LIMIT)} need a second approver. Sent to the Finance Manager.`);
+    return ok({ pending: true }, `Entries above ${money(db.settings.jeApprovalLimit)} need a second approver. Sent to the Finance Manager.`);
   }
   postJE(ctx, p.memo, "Manual journal", ls, "manual", p.date);
   audit(ctx, "journal_entry.posted", "Journal entry", p.memo, `${money(dr)} · ${ls.map((l) => l.account).join("/")}`);
@@ -43,3 +42,19 @@ export function reopenPeriod(ctx: Ctx, p: { periodId: string }): Result {
 }
 function db_open(ctx: Ctx, id: string) { ctx.db.periodStatus[id] = "open"; }
 void assertPostable;
+
+export function updateSettings(ctx: Ctx, p: Partial<Settings>): Result {
+  if (ctx.role !== "owner" && ctx.role !== "admin") return fail("PERM", "Only the Owner or an Admin can change policies", "These limits control who approves what.", "Ask the Owner.");
+  const st = ctx.db.settings;
+  const rates: (keyof Settings)[] = ["furtherTaxRate", "wht236hAtl", "wht236hNonAtlRetail", "wht236hNonAtlOther"];
+  const changes: string[] = [];
+  for (const [k, v] of Object.entries(p) as [keyof Settings, number][]) {
+    if (!(k in st) || typeof v !== "number" || !Number.isFinite(v) || v < 0) return fail("SET_INVALID", "That value isn't valid", `${k} must be a number of zero or more.`, "Check the figure and try again.");
+    if (rates.includes(k) && v > 0.3) return fail("SET_RATE", "Rate looks too high", "Tax rates are entered as a fraction, for example 0.04 for 4%.", "Enter a value between 0 and 0.30.");
+    if (k === "maxOverdueDays" && (!Number.isInteger(v) || v > 365)) return fail("SET_DAYS", "Use whole days up to 365", "The overdue limit is counted in days.", "For example 30.");
+    if (st[k] !== v) { changes.push(`${k}: ${st[k]} → ${v}`); (st as unknown as Record<string, number>)[k] = v; }
+  }
+  if (!changes.length) return fail("SET_NO_CHANGE", "Nothing changed", "The values are the same as before.", "Edit a value, then save.");
+  audit(ctx, "settings.updated", "Settings", "Policies", changes.join("; "));
+  return ok(undefined, `Saved ${changes.length} change${changes.length > 1 ? "s" : ""}. New documents use them immediately.`);
+}

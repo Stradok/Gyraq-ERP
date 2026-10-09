@@ -1,5 +1,9 @@
 "use client";
+import { useState } from "react";
 import { ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { fbrPayload, validateFbr } from "@/lib/integrations/fbr";
 import type { Invoice } from "@/lib/data/types";
 import { dateLong } from "@/lib/format";
 import { diffDays } from "@/lib/data/dates";
@@ -23,6 +27,9 @@ export function QrBlock({ seed, size = 92 }: { seed: string; size?: number }) {
 }
 
 export function FbrPanel({ inv }: { inv: Invoice }) {
+  const [open, setOpen] = useState(false);
+  const db = getDB();
+  const payload = fbrPayload(db, inv), checks = validateFbr(payload, inv);
   const now = `${getDB().today}T12:00`;
   const issued = `${inv.date}T17:30`;
   const hours = Math.round((Date.parse(now) - Date.parse(issued)) / 3_600_000);
@@ -34,6 +41,8 @@ export function FbrPanel({ inv }: { inv: Invoice }) {
         <div className="flex items-center gap-2"><ShieldCheck className="size-4 text-info" /><span className="font-medium">FBR Digital Invoicing</span><StatusBadge status="simulated" label="Simulated" /></div>
         <div><span className="text-xs text-muted-foreground">Invoice reference number (IRN)</span><div><Mono>{inv.fbr.irn}</Mono></div></div>
         <div className="text-xs text-muted-foreground">Submitted {dateLong(inv.fbr.at)} · not transmitted to FBR (demo)</div>
+        <Button size="xs" variant="outline" onClick={() => setOpen(true)}>View FBR payload</Button>
+        <Sheet open={open} onOpenChange={setOpen}><SheetContent className="w-full overflow-y-auto sm:max-w-[640px]"><SheetHeader><SheetTitle>FBR payload for {inv.number}</SheetTitle><SheetDescription>What the connector would send to PRAL. Not transmitted in demo mode.</SheetDescription></SheetHeader><div className="space-y-3 px-4 pb-6"><ul className="space-y-1 rounded-md border p-2.5 text-xs">{checks.map((c) => <li key={c.label} className={c.ok ? "text-success" : "text-danger"}>{c.ok ? "✓" : "✗"} {c.label}</li>)}</ul><pre className="max-h-[60dvh] overflow-auto rounded-md border bg-subtle p-3 font-mono text-[11px] leading-relaxed">{JSON.stringify(payload, null, 2)}</pre></div></SheetContent></Sheet>
         {left > 0 ? <div className="text-xs text-warning">Editable for {left}h more. After that, corrections need a credit/debit note linked to the IRN.</div> : <div className="text-xs text-muted-foreground">72-hour correction window closed {diffDays(getDB().today, inv.date)}d ago. Use a credit note to correct.</div>}
       </div>
     </div>

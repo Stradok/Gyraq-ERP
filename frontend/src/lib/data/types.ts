@@ -475,3 +475,18 @@ export interface CreditNote {
   tax: number;
   total: number;
 }
+
+export interface Settings {
+  poOwnerLimit: number;
+  adjustApprovalLimit: number;
+  jeApprovalLimit: number;
+  expenseFinanceLimit: number;
+  maxOverdueDays: number;
+  minCash: number;
+  furtherTaxRate: number; // on supplies to unregistered / non-ATL buyers
+  wht236hAtl: number; // advance tax collected from ATL retailers/wholesalers
+  wht236hNonAtlRetail: number;
+  wht236hNonAtlOther: number;
+}
+
+export interface OutboxMsg { id: string; at: string; channel: "WhatsApp" | "Email" | "FBR"; to: string; subject: string; body: string; status: "simulated" }

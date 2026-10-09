@@ -2,7 +2,6 @@ import type { StockCount } from "../data/types";
 import { can } from "../rbac";
 import { assertPostable, audit, cell, fail, money, newId, nextNo, ok, postJE, r2, unitCost, type Ctx, type Result } from "./core";
 
-export const ADJUST_APPROVAL_LIMIT = 50_000;
 
 export function transferStock(ctx: Ctx, p: { productId: string; fromId: string; toId: string; qty: number }): Result<{ id: string }> {
   const db = ctx.db;
@@ -45,10 +44,10 @@ export function adjustStock(ctx: Ctx, p: { productId: string; warehouseId: strin
   if (!Number.isInteger(p.qtyDelta) || p.qtyDelta === 0) return fail("ADJ_QTY", "Enter a non-zero whole number", "Use a negative number for a loss.", "Type the change in units.");
   if (p.reason.trim().length < 4) return fail("ADJ_REASON", "Give a reason", "Adjustments are audited and need an explanation.", "For example: damaged in handling.");
   const value = Math.abs(p.qtyDelta) * unitCost(cell(db, p.productId, p.warehouseId), pr.cost);
-  if (value > ADJUST_APPROVAL_LIMIT && !can(ctx.role, "approve.finance")) {
+  if (value > db.settings.adjustApprovalLimit && !can(ctx.role, "approve.finance")) {
     db.approvals.unshift({ id: newId("apr"), type: "stock_adjustment", title: `Stock adjustment – ${pr.name}`, subtitle: `${db.warehouses.find((w) => w.id === p.warehouseId)!.code} · ${p.qtyDelta > 0 ? "+" : ""}${p.qtyDelta} units · ${p.reason}`, amount: r2(value), requestedBy: ctx.actor, requestedAt: ctx.date, status: "pending", ref: p.productId, source: "user", step: "Finance Manager", payload: { productId: p.productId, warehouseId: p.warehouseId, qtyDelta: p.qtyDelta, reason: p.reason } });
     audit(ctx, "stock_adjustment.requested", "Stock adjustment", pr.sku, `${money(value)} needs Finance approval`);
-    return ok({ pending: true }, `Adjustment of ${money(value)} sent to Finance for approval (limit ${money(ADJUST_APPROVAL_LIMIT)}).`);
+    return ok({ pending: true }, `Adjustment of ${money(value)} sent to Finance for approval (limit ${money(db.settings.adjustApprovalLimit)}).`);
   }
   const r = applyAdjustment(ctx, p);
   return r.ok ? ok({ pending: false }, r.message) : r;
@@ -62,7 +61,7 @@ export function postCount(ctx: Ctx, p: { warehouseId: string; counter: string; l
   const variance = r2(rows.reduce((s, r) => s + r.value, 0));
   const sc: StockCount = { id: newId("sc"), number: nextNo("SC-", db.stockCounts, 300), warehouseId: p.warehouseId, date: ctx.date, counter: p.counter, status: "review", lines: rows.map((r) => ({ productId: r.productId, location: r.location, expected: r.expected, counted: r.counted })) };
   db.stockCounts.unshift(sc);
-  const big = Math.abs(variance) > ADJUST_APPROVAL_LIMIT;
+  const big = Math.abs(variance) > db.settings.adjustApprovalLimit;
   if (big && !can(ctx.role, "approve.finance")) {
     db.approvals.unshift({ id: newId("apr"), type: "stock_adjustment", title: `Stock count variance – ${db.warehouses.find((w) => w.id === p.warehouseId)!.code}`, subtitle: `${sc.number} · ${variance < 0 ? "−" : "+"}${money(Math.abs(variance))}`, amount: Math.abs(variance), requestedBy: p.counter, requestedAt: ctx.date, status: "pending", ref: sc.id, source: "user", step: "Finance Manager", payload: { countId: sc.id } });
     audit(ctx, "stock_count.submitted", "Stock count", sc.number, `Variance ${money(variance)} awaiting approval`);

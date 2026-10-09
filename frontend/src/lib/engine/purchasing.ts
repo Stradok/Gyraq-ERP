@@ -5,7 +5,6 @@ import { can } from "../rbac";
 import { assertPostable, audit, cell, fail, levenshtein, money, newId, nextNo, normInvNo, notify, ok, pad, postJE, r2, type Ctx, type Result } from "./core";
 import { runAutomations } from "./automations";
 
-export const PO_OWNER_LIMIT = 1_000_000;
 const BANKS = ["1100", "1110", "1120", "1130"];
 
 export interface POLineIn { productId: string; cartons: number; price: number }
@@ -18,7 +17,7 @@ export function createPO(ctx: Ctx, p: { supplierId: string; warehouseId: string;
   const lines = p.lines.map((l) => { const pr = db.products.find((x) => x.id === l.productId)!; return { productId: l.productId, qty: l.cartons * pr.cartonSize, price: r2(l.price), received: 0 }; });
   const sub = r2(lines.reduce((s, l) => s + l.qty * l.price, 0));
   const po: PurchaseOrder = { id: newId("po"), number: nextNo("PO-", db.pos, 5000), supplierId: sup.id, warehouseId: p.warehouseId, date: ctx.date, expectedDate: addDays(ctx.date, sup.leadTimeDays), status: "pending_approval", lines, subtotal: sub, tax: r2(sub * 0.17), total: r2(sub * 1.17), source: p.source ?? "user" };
-  const needsOwner = po.total > PO_OWNER_LIMIT;
+  const needsOwner = po.total > db.settings.poOwnerLimit;
   const autoApprove = !needsOwner && can(ctx.role, "approve.po");
   if (autoApprove) { po.status = "approved"; for (const l of lines) cell(db, l.productId, po.warehouseId).incoming += l.qty; }
   else db.approvals.unshift({ id: newId("apr"), type: "purchase_order", title: `Purchase order ${po.number} – ${sup.name}`, subtitle: `${lines.length} line${lines.length === 1 ? "" : "s"}${po.source === "ai_proposal" ? " · from AI recommendation" : ""}${p.note ? ` · ${p.note}` : ""}`, amount: po.total, requestedBy: ctx.actor, requestedAt: ctx.date, status: "pending", ref: po.id, source: po.source === "ai_proposal" ? "ai" : "user", step: needsOwner ? "Owner" : "Procurement Manager" });

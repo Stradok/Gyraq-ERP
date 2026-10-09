@@ -110,8 +110,8 @@ export const TOOLS = {
     description: "13-week cash projection with the weeks below the minimum cash threshold and their drivers.",
     input: z.object({}),
     run(): ToolResult {
-      const cp = cashProjection(); const breach = cp.weeks.find((w) => w.closing < ORG.minCash); const min = [...cp.weeks].sort((a, b) => a.closing - b.closing)[0]!;
-      return { summary: `${breach ? `Cash falls below the ${M(ORG.minCash)} minimum in week ${breach.week} (${M(breach.closing)}). Drivers: ${breach.drivers.map((d) => `${d.label} ${M(d.amount)}`).join("; ")}.` : "Cash stays above the minimum."} Lowest balance ${M(min.closing)} in week ${min.week}.`, ui: { kind: "cash", weeks: cp.weeks.map((w) => ({ label: `W${w.week}`, closing: Math.round(w.closing) })), min: ORG.minCash }, records: [{ type: "Report", id: "cash", label: "13-week cash projection", href: "/finance/cashflow" }] };
+      const cp = cashProjection(); const breach = cp.weeks.find((w) => w.closing < getDB().settings.minCash); const min = [...cp.weeks].sort((a, b) => a.closing - b.closing)[0]!;
+      return { summary: `${breach ? `Cash falls below the ${M(getDB().settings.minCash)} minimum in week ${breach.week} (${M(breach.closing)}). Drivers: ${breach.drivers.map((d) => `${d.label} ${M(d.amount)}`).join("; ")}.` : "Cash stays above the minimum."} Lowest balance ${M(min.closing)} in week ${min.week}.`, ui: { kind: "cash", weeks: cp.weeks.map((w) => ({ label: `W${w.week}`, closing: Math.round(w.closing) })), min: getDB().settings.minCash }, records: [{ type: "Report", id: "cash", label: "13-week cash projection", href: "/finance/cashflow" }] };
     },
   },
   get_expense_breakdown: {

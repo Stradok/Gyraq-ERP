@@ -9,7 +9,7 @@ import { Kpi } from "@/components/app/kpi";
 import { AiChip, InsightCard } from "@/components/app/ai";
 import { StatusBadge } from "@/components/app/status";
 import { AreaTrend, Bars, CashChart } from "@/components/charts/charts";
-import { aiBrief, arAging, cashProjection, insights, monthSeries, overviewKpis } from "@/lib/data/queries";
+import { aiBrief, arAging, cashProjection, getDB, insights, monthSeries, overviewKpis } from "@/lib/data/queries";
 import { ORG } from "@/lib/data/catalog";
 import { fiscalQuarter } from "@/lib/data/dates";
 import { dateLong, dateShort, moneyCompact, monthLabel, pct0 } from "@/lib/format";
@@ -140,7 +140,7 @@ export default function OverviewPage() {
               <Bars data={aging.map((a) => ({ bucket: a.bucket === "current" ? "Current" : a.bucket, amount: a.amount }))} xKey="bucket" series={[{ key: "amount", label: "Open" }]} colorByIndex={["var(--chart-3)", "var(--chart-2)", "var(--warning)", "var(--danger)", "var(--danger)"]} />
             </Section>
             <Section title="Cash projection · next 13 weeks" description="Collections, supplier payments, payroll and open POs" className="lg:col-span-3" actions={<Link href="/finance/cashflow" className="text-xs text-muted-foreground hover:text-foreground">Assumptions & drivers →</Link>}>
-              <CashChart data={cp.weeks.map((w) => ({ label: `W${w.week}`, closing: w.closing }))} min={ORG.minCash} height={220} />
+              <CashChart data={cp.weeks.map((w) => ({ label: `W${w.week}`, closing: w.closing }))} min={getDB().settings.minCash} height={220} />
             </Section>
           </div>
         )}

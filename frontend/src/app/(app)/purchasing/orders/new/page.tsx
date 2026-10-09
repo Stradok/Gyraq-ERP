@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { Totals } from "@/components/app/entity";
 import { getDB } from "@/lib/data/queries";
-import { PO_OWNER_LIMIT } from "@/lib/engine/purchasing";
 import { run } from "@/lib/engine/client";
 import { money, money2, num } from "@/lib/format";
 import { useWorld } from "@/lib/store";
@@ -53,7 +52,7 @@ export default function NewPO() {
           </div>
           <div className="space-y-4">
             <Section title="Approval">
-              <p className="text-[13px] text-muted-foreground">{total > PO_OWNER_LIMIT ? <>This order is above {money(PO_OWNER_LIMIT)} so the <b className="text-foreground">Owner</b> will be asked to approve it.</> : <>Within the procurement limit. If you are a Procurement Manager or the Owner it approves immediately.</>}</p>
+              <p className="text-[13px] text-muted-foreground">{total > db.settings.poOwnerLimit ? <>This order is above {money(db.settings.poOwnerLimit)} so the <b className="text-foreground">Owner</b> will be asked to approve it.</> : <>Within the procurement limit. If you are a Procurement Manager or the Owner it approves immediately.</>}</p>
             </Section>
             <Button className="w-full" disabled={!rows.length} onClick={() => { const r = run("CreatePO", { supplierId: sid, warehouseId: wid, lines: lines.map((l) => ({ productId: l.p.id, cartons: +l.r.cartons || 0, price: l.price })) }); if (r.ok) router.push(`/purchasing/orders/${(r.value as { id: string }).id}`); }}>Create purchase order</Button>
           </div>

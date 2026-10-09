@@ -1,0 +1,67 @@
+// Pure-logic checks: period resolution, natural-language query parsing, FBR mapping, local assistant grounding.
+import assert from "node:assert/strict";
+import { resolvePeriod } from "../src/lib/data/dates";
+import { buildDB, runOn } from "../src/lib/data/sim";
+import { fbrPayload, validateFbr } from "../src/lib/integrations/fbr";
+import { interpret, parseAmount } from "../src/lib/nl";
+import { answerLocal, INSUFFICIENT } from "../src/lib/ai/local";
+import { findGuide } from "../src/lib/ai/guide";
+import { validateExtraction } from "../src/lib/ai/extract";
+import { checkFigures } from "../src/lib/ai/grounding";
+import { runTool } from "../src/lib/ai/tools";
+
+const T = "2026-10-09"; // a Friday
+const eq = (p: string, from: string, to: string) => { const r = resolvePeriod(p, T)!; assert.ok(r, p); assert.equal(`${r.from}..${r.to}`, `${from}..${to}`, p); };
+console.log("Periods");
+eq("last week", "2026-09-28", "2026-10-04");
+eq("this week", "2026-10-05", "2026-10-09");
+eq("yesterday", "2026-10-08", "2026-10-08");
+eq("last month", "2026-09-01", "2026-09-30");
+eq("this month", "2026-10-01", "2026-10-09");
+eq("last quarter", "2026-07-01", "2026-09-30");
+eq("fiscal year to date", "2026-07-01", "2026-10-09");
+eq("last 30 days", "2026-09-10", "2026-10-09");
+eq("september", "2026-09-01", "2026-09-30");
+assert.equal(resolvePeriod("sometime", T), null);
+console.log("  ✓ 10 period phrases");
+
+console.log("Amounts and NL queries");
+assert.equal(parseAmount("balances over 1 million"), 1_000_000);
+assert.equal(parseAmount("more than 5 lakh"), 500_000);
+assert.equal(parseAmount("above 2.5 crore"), 25_000_000);
+const db = buildDB();
+runOn(db, () => {
+  const q = interpret("Show overdue customers in Karachi with balances over 1 million")!;
+  assert.ok(q && q.chips.includes("Overdue") && q.chips.includes("City = Karachi"), "NL chips");
+  assert.ok(q.href.includes("minBalance=1000000"));
+  console.log("  ✓ amounts, intent chips");
+
+  console.log("Local assistant");
+  const a = answerLocal("What is our revenue last week?");
+  assert.equal(a.status, "answered"); assert.ok(!a.steps.some((s) => s.tool === "open_page"), "message-only does not navigate");
+  const b = answerLocal("Show me revenue for last week on the webapp");
+  assert.ok(b.steps.some((s) => s.tool === "open_page"), "show-on-screen navigates");
+  assert.equal(answerLocal("What will customer satisfaction be next year?").status, "insufficient_data");
+  assert.ok(answerLocal("zzz qqq").text.startsWith(INSUFFICIENT));
+  assert.equal(findGuide("how do I record a cheque payment")[0]!.id, "record-payment");
+  console.log("  ✓ answer vs navigate, insufficient data, guide lookup");
+
+  const rev = runTool("get_revenue", { from: "2026-09-01", to: "2026-09-30" });
+  const m = rev.summary.match(/revenue Rs ([\d,]+)/)!;
+  assert.equal(checkFigures(`Revenue was Rs ${m[1]} in September.`, [rev]).unverified.length, 0, "true figure passes");
+  assert.deepEqual(checkFigures("Revenue was Rs 999,999,999 in September.", [rev]).unverified, ["Rs 999,999,999"], "invented figure flagged");
+  console.log("  ✓ grounding check passes true figures and flags invented ones");
+
+  console.log("FBR mapper on seeded invoices");
+  let bad = 0;
+  for (const inv of db.invoices.slice(0, 300)) { const p = fbrPayload(db, inv); const failed = validateFbr(p, inv).filter((c) => !c.ok); if (failed.length) { bad++; if (bad < 3) console.log("   ", inv.number, failed.map((f) => f.label).join(" | ")); } }
+  assert.equal(bad, 0, `${bad} invoices fail FBR pre-flight`);
+  console.log("  ✓ 300 invoices pass pre-flight");
+});
+
+console.log("Extraction validators");
+const good = { supplierName: "X", supplierNtn: "1234567-8", invoiceNo: "A1", invoiceDate: "2026-10-01", poReference: null, lines: [{ description: "a", qty: 10, unitPrice: 5, amount: 50 }], subtotal: 50, salesTax: 8.5, total: 58.5 };
+assert.ok(validateExtraction(good).every((c) => c.ok));
+assert.ok(validateExtraction({ ...good, total: 70 }).some((c) => !c.ok));
+console.log("  ✓ catches inconsistent totals");
+console.log("\nAll unit checks passed.");

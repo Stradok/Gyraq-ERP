@@ -84,3 +84,8 @@ export function levenshtein(a: string, b: string): number {
 export const normInvNo = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
 export const productOf = (db: DB, id: string): Product | undefined => db.products.find((p) => p.id === id);
 void addDays; void diffDays;
+
+/** Simulated outbound message. Demo orgs never send anything externally; the outbox shows what would have gone out. */
+export function queue(ctx: Ctx, channel: "WhatsApp" | "Email" | "FBR", to: string, subject: string, body: string) {
+  ctx.db.outbox.unshift({ id: newId("out"), at: ctx.now, channel, to, subject, body, status: "simulated" });
+}

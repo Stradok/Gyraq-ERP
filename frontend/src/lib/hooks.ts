@@ -20,7 +20,9 @@ export function useNotifications() {
   useWorld((s) => s.version);
   const { readNotifs } = useERP();
   const mounted = useMounted();
-  return getDB().notifications.map((n) => ({ ...n, read: n.read || (mounted && readNotifs.includes(n.id)) }));
+  const muted = useERP((s) => s.mutedTypes);
+  const kind = (n: { href: string; title: string }) => /approvals/.test(n.href) ? "approvals" : /replenishment|inventory|warehouses/.test(n.href) ? "stock" : /customers|payments/.test(n.href) ? "payments" : /purchasing|suppliers/.test(n.href) ? "purchasing" : /finance/.test(n.href) ? "finance" : "ai";
+  return getDB().notifications.filter((n) => !(mounted && muted.includes(kind(n)))).map((n) => ({ ...n, read: n.read || (mounted && readNotifs.includes(n.id)) }));
 }
 
 export const useIdx = () => idx();

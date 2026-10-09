@@ -436,7 +436,7 @@ export function cashProjection(extraPOs: PurchaseOrder[] = []): { weeks: CashWee
         "Customers rated high risk collect at 55% probability and 25 days later; medium risk at 90% and 8 days later.",
         "Supplier bills are paid 2 days after due date. Approved purchase orders become payable at ETA + 2 days + supplier terms.",
         `Payroll on the 1st at last month's net (${Math.round(lastPay.net).toLocaleString("en-US")}); rent, utilities, fuel and freight at their 3-month averages.`,
-        `Minimum cash threshold: Rs ${ORG.minCash.toLocaleString("en-US")}.`,
+        `Minimum cash threshold: Rs ${getDB().settings.minCash.toLocaleString("en-US")}.`,
       ],
     };
   });
@@ -553,10 +553,10 @@ export function insights(): Insight[] {
     // cashflow
     const cp = cashProjection();
     const min = [...cp.weeks].sort((a, b) => a.closing - b.closing)[0]!;
-    const breach = cp.weeks.find((w) => w.closing < ORG.minCash);
+    const breach = cp.weeks.find((w) => w.closing < getDB().settings.minCash);
     out.push({
       id: "ins_cashflow", kind: "cashflow", severity: breach ? "critical" : "medium", title: breach ? `Cash is projected below minimum in week ${breach.week}` : "Cash position stays above minimum for 13 weeks",
-      statement: breach ? `Projected balance reaches ${M(breach.closing)} in week ${breach.week} (${breach.start}); the minimum is ${M(ORG.minCash)}.` : `Lowest projected balance is ${M(min.closing)} in week ${min.week}.`,
+      statement: breach ? `Projected balance reaches ${M(breach.closing)} in week ${breach.week} (${breach.start}); the minimum is ${M(getDB().settings.minCash)}.` : `Lowest projected balance is ${M(min.closing)} in week ${min.week}.`,
       why: (breach ?? min).drivers.map((d) => `${d.label}: ${M(d.amount)}`).concat([`Opening cash today: ${M(cashBalance(t))}`]), sources: [{ type: "Report", label: "13-week cash projection", href: "/finance/cashflow" }],
       confidence: "medium", basis: "Open AR with customer-specific payment lag · open AP · payroll · approved POs", generatedAt: stamp, generator: "computed", action: { label: "Open cash forecast", href: "/finance/cashflow" },
     });
@@ -622,7 +622,7 @@ export function aiBrief() {
   const worst = [...pv.cats].sort((a, b) => a.mix + a.rate - (b.mix + b.rate))[0]!;
   const gm = pv.cur.gm - pv.prev.gm;
   const cp = cashProjection();
-  const breach = cp.weeks.find((w) => w.closing < ORG.minCash);
+  const breach = cp.weeks.find((w) => w.closing < getDB().settings.minCash);
   const recs = recommendations().filter((r) => r.severity === "critical" || r.severity === "high");
   const paragraph = `Revenue is ${revGrowth >= 0 ? "up" : "down"} ${Math.abs(revGrowth).toFixed(1)}% over the last 30 days versus the 30 before${gm < -0.3 ? `, but gross margin fell ${Math.abs(gm).toFixed(1)} points last month; the largest drag is ${worst.category.replace(/_/g, " ")}` : `, with gross margin steady at ${pv.cur.gm.toFixed(1)}%`}. Overdue receivables are ${(k.overdue / 1e6).toFixed(1)}M${breach ? ` and projected cash falls below the minimum in week ${breach.week}` : ""}.`;
   const actions = [

@@ -9,7 +9,7 @@ import type {
   Account, Approval, AuditEvent, BankTxn, CategoryId, CreditNote, Customer, CustomerPayment, DocLine, Employee, Expense,
   GoodsReceipt, ISODate, Invoice, JournalEntry, JournalLine, Lead, LeaveRequest, MatchException, Notification, PayrollRun,
   Product, PurchaseOrder, Quote, SalesOrder, StockCount, Supplier, SupplierBill, SupplierPayment, Warehouse,
-  AutomationRule, PrincipalClaim, Shipment, StockTransfer,
+  AutomationRule, OutboxMsg, PrincipalClaim, Settings, Shipment, StockTransfer,
 } from "./types";
 
 const SCALE_K = 0.74; // order-size calibration (tuned for ~Rs 110-130M monthly revenue)
@@ -59,6 +59,8 @@ export interface DB {
   transfers: StockTransfer[];
   claims: PrincipalClaim[];
   rules: AutomationRule[];
+  outbox: OutboxMsg[];
+  settings: Settings;
   periodStatus: Record<string, "closed" | "soft_closed" | "open">; // overrides computed fiscal-period status
   stock: Map<string, Cell>; // key `${productId}|${warehouseId}`
   calendar: ForecastEvent[];
@@ -948,7 +950,8 @@ export function buildDB(): DB {
 
   return {
     today, start, warehouses, suppliers, products, customers, employees, quotes, orders, invoices, creditNotes, payments, pos, grns, bills, supplierPayments, stockCounts, expenses, leaves, payroll,
-    shipments: [], transfers: [], claims: [], periodStatus: {},
+    shipments: [], transfers: [], claims: [], outbox: [], periodStatus: {},
+    settings: { poOwnerLimit: 1_000_000, adjustApprovalLimit: 50_000, jeApprovalLimit: 500_000, expenseFinanceLimit: 25_000, maxOverdueDays: 30, minCash: ORG.minCash, furtherTaxRate: 0.04, wht236hAtl: 0.005, wht236hNonAtlRetail: 0.025, wht236hNonAtlOther: 0.01 },
     rules: [
       { id: "WF-001", name: "Large invoice approval", event: "invoice.posted", fact: "invoice.total", op: "gt", value: 500_000, action: "notify", target: "finance", enabled: true, runs: 41 },
       { id: "WF-002", name: "Low stock recommendation", event: "stock.low", fact: "available", op: "any", value: 0, action: "create_recommendation", target: "procurement", enabled: true, runs: 128 },

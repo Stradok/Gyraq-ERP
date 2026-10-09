@@ -4,7 +4,7 @@ import { resetSearch } from "../search";
 import type { Role } from "../rbac";
 import { decideApproval } from "./approvals";
 import { fail, setIdScope, type Ctx, type Result } from "./core";
-import { closePeriod, postManualJE, reopenPeriod } from "./finance";
+import { closePeriod, postManualJE, reopenPeriod, updateSettings } from "./finance";
 import { adjustStock, postCount, transferStock } from "./inventory";
 import { createCustomer, createLead, createProduct, createQuote, createSupplier, moveLead, releaseCreditHold, requestCreditHold, requestCreditLimit, setQuoteStatus } from "./masters";
 import { confirmBankMatch, createRule, queueMessage, setRule, submitExpense, submitLeave } from "./people";
@@ -19,7 +19,7 @@ export const HANDLERS = {
   RecordPayment: recordPayment, DepositCheque: depositCheque, ClearCheque: clearCheque, BounceCheque: bounceCheque, DepositCash: depositCash, CreateReturn: createReturn, SetClaimStatus: setClaimStatus,
   CreatePO: createPO, ReceiveGoods: receiveGoods, CreateBill: createBill, ResolveBill: resolveBill, PaySupplier: paySupplier,
   TransferStock: transferStock, AdjustStock: adjustStock, PostCount: postCount,
-  PostManualJE: postManualJE, ClosePeriod: closePeriod, ReopenPeriod: reopenPeriod,
+  PostManualJE: postManualJE, UpdateSettings: updateSettings, ClosePeriod: closePeriod, ReopenPeriod: reopenPeriod,
   DecideApproval: decideApproval, SubmitExpense: submitExpense, SubmitLeave: submitLeave, ConfirmBankMatch: confirmBankMatch, SetRule: setRule, QueueMessage: queueMessage, CreateRule: createRule,
 } as const;
 

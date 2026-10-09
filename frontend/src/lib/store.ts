@@ -16,6 +16,8 @@ interface State {
   dismissed: string[];
   readNotifs: string[];
   actedRecs: Record<string, "accepted" | "dismissed">;
+  mutedTypes: string[];
+  history: { id: string; q: string; at: string }[];
   commands: CommandRecord[];
   cmdSeq: number;
   anchor: string; // business date the log was recorded against; the seed shifts daily, so the log expires with it
@@ -26,10 +28,12 @@ interface State {
   dismiss: (id: string) => void;
   markRead: (ids: string[]) => void;
   actRec: (id: string, v: "accepted" | "dismissed") => void;
+  toggleMuted: (k: string) => void;
+  addHistory: (q: string) => void;
   reset: () => void;
 }
 
-const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], readNotifs: [], actedRecs: {}, commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
+const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
 
 export const useERP = create<State>()(
   persist(
@@ -42,6 +46,8 @@ export const useERP = create<State>()(
       dismiss: (id) => set((s) => ({ dismissed: [...s.dismissed, id] })),
       markRead: (ids) => set((s) => ({ readNotifs: [...new Set([...s.readNotifs, ...ids])] })),
       actRec: (id, v) => set((s) => ({ actedRecs: { ...s.actedRecs, [id]: v } })),
+      toggleMuted: (k) => set((s) => ({ mutedTypes: s.mutedTypes.includes(k) ? s.mutedTypes.filter((x) => x !== k) : [...s.mutedTypes, k] })),
+      addHistory: (q) => set((s) => ({ history: [{ id: String(Date.now()), q, at: new Date().toISOString() }, ...s.history.filter((h) => h.q !== q)].slice(0, 12) })),
       reset: () => set({ ...initial }),
     }),
     { name: "meridian-demo-v2", storage: createJSONStorage(() => localStorage), skipHydration: true },

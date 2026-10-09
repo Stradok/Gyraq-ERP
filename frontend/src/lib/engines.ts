@@ -2,6 +2,7 @@
 import type { CreditCheck, Customer, DocLine, Product } from "./data/types";
 import type { CustomerStats } from "./data/queries";
 import { SCHEMES } from "./data/catalog";
+import { getDB } from "./data/sim";
 
 const CHANNEL_FACTOR: Record<Customer["channel"], number> = { modern_trade: 0.97, wholesale: 0.985, retail: 1, sub_distributor: 0.96, horeca: 1 };
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -29,18 +30,19 @@ export function docTotals(lines: DocLine[], c: Customer) {
   const value = r2(lines.reduce((s, l) => s + l.value, 0));
   const discount = r2(lines.reduce((s, l) => s + l.discount, 0));
   const tax = r2(lines.reduce((s, l) => s + l.salesTax, 0));
-  const further = !c.registered || !c.atl ? r2(value * 0.04) : 0;
-  const wht = c.channel === "retail" || c.channel === "wholesale" || c.channel === "sub_distributor" ? r2((value + tax) * (c.atl ? 0.005 : c.channel === "retail" ? 0.025 : 0.01)) : 0;
+  const st = getDB().settings;
+  const further = !c.registered || !c.atl ? r2(value * st.furtherTaxRate) : 0;
+  const wht = c.channel === "retail" || c.channel === "wholesale" || c.channel === "sub_distributor" ? r2((value + tax) * (c.atl ? st.wht236hAtl : c.channel === "retail" ? st.wht236hNonAtlRetail : st.wht236hNonAtlOther)) : 0;
   return { gross: r2(value + discount), discount, tax, further, wht, total: r2(value + tax + further + wht) };
 }
 
-export function creditCheck(c: Customer, s: CustomerStats, orderTotal: number): CreditCheck {
+export function creditCheck(c: Customer, s: CustomerStats, orderTotal: number, maxOverdue = getDB().settings.maxOverdueDays): CreditCheck {
   const exposure = s.outstanding + orderTotal;
   const reasons: string[] = [];
   let decision: CreditCheck["decision"] = "pass";
   if (c.status !== "active") { decision = "block"; reasons.push(`Customer is ${c.status.replace("_", " ")}`); }
   if (exposure > c.creditLimit) { decision = "block"; reasons.push(`Exposure Rs ${Math.round(exposure).toLocaleString("en-US")} exceeds limit Rs ${c.creditLimit.toLocaleString("en-US")}`); }
-  if (s.maxDaysOverdue > 30) { decision = "block"; reasons.push(`Oldest invoice is ${s.maxDaysOverdue} days overdue (policy: 30)`); }
+  if (s.maxDaysOverdue > maxOverdue) { decision = "block"; reasons.push(`Oldest invoice is ${s.maxDaysOverdue} days overdue (policy: ${maxOverdue})`); }
   if (s.bounces180 >= 2) reasons.push(`${s.bounces180} cheques bounced in the last 180 days`);
   if (decision === "pass" && (exposure > c.creditLimit * 0.9 || s.band === "high")) { decision = "warn"; reasons.push(s.band === "high" ? "Customer risk is high" : "Exposure above 90% of limit"); }
   if (!reasons.length) reasons.push("Within limit, no overdue invoices");

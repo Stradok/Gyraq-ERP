@@ -1,7 +1,7 @@
 import { addDays } from "../data/dates";
 import type { Channel, Customer, DocLine, Lead, Product, Quote, Supplier, TaxCategory } from "../data/types";
 import { priceLine } from "../engines";
-import { audit, cell, fail, money, newId, nextNo, notify, ok, pad, r2, type Ctx, type Result } from "./core";
+import { audit, cell, fail, money, newId, nextNo, notify, ok, pad, queue, r2, type Ctx, type Result } from "./core";
 import { customerStats } from "../data/queries";
 
 const WH_BY_CITY: Record<string, string> = { Karachi: "KHI-DC1", Hyderabad: "KHI-DC1", Sukkur: "KHI-DC1", Nawabshah: "KHI-DC1", Lahore: "LHE-DC", Sialkot: "LHE-DC", Multan: "LHE-DC", Bahawalpur: "LHE-DC", Islamabad: "ISB-DC", Rawalpindi: "ISB-DC", Jhelum: "ISB-DC", Abbottabad: "ISB-DC", Faisalabad: "FSD-DP" };
@@ -93,7 +93,7 @@ export function setQuoteStatus(ctx: Ctx, p: { id: string; status: Quote["status"
   if (!allowed[q.status].includes(p.status)) return fail("QT_TRANSITION", "That status change isn't allowed", `A ${q.status} quotation can't become ${p.status}.`, "Quotations go Draft → Sent → Accepted.");
   q.status = p.status;
   audit(ctx, `quote.${p.status}`, "Quotation", q.number);
-  if (p.status === "sent") notify(ctx, `Quotation ${q.number} sent`, "Simulated: nothing was emailed.", "info", "/sales/quotes");
+  if (p.status === "sent") { const c = ctx.db.customers.find((x) => x.id === q.customerId)!; queue(ctx, "Email", `${c.contact} <${c.email}>`, `Quotation ${q.number}`, `Dear ${c.contact}, please find our quotation ${q.number} valid until ${q.validUntil}. Total ${money(q.total)} excl. tax.`); notify(ctx, `Quotation ${q.number} sent`, "Simulated: nothing was emailed. See the outbox.", "info", "/integrations"); }
   return ok(undefined, `${q.number} marked ${p.status}`);
 }
 

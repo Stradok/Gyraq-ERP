@@ -3,7 +3,7 @@ import { customerStats, invalidate } from "../data/queries";
 import type { CreditNote, Customer, CustomerPayment, DocLine, Invoice, SalesOrder, Shipment } from "../data/types";
 import { creditCheck, docTotals, priceLine } from "../engines";
 import { runAutomations } from "./automations";
-import { assertPostable, audit, cell, fail, money, newId, nextNo, notify, ok, pad, postJE, r2, unitCost, type Ctx, type Result } from "./core";
+import { assertPostable, audit, cell, fail, money, newId, nextNo, notify, ok, pad, postJE, queue, r2, unitCost, type Ctx, type Result } from "./core";
 
 export interface OrderLineIn { productId: string; cartons: number; discPct: number }
 const BANKS = ["1100", "1110", "1120"];
@@ -35,7 +35,7 @@ export function createOrder(ctx: Ctx, p: { customerId: string; lines: OrderLineI
   const priced = p.lines.flatMap((l) => priceLine(db.products.find((x) => x.id === l.productId)!, c, l.cartons, l.discPct));
   const lines: DocLine[] = priced.map(({ cartons: _c, trace: _t, ...d }) => d);
   const t = docTotals(lines, c);
-  const check = creditCheck(c, customerStats(c.id), t.total);
+  const check = creditCheck(c, customerStats(c.id), t.total, db.settings.maxOverdueDays);
   const so: SalesOrder = { id: newId("so"), number: nextNo("SO-", db.orders, 20000), customerId: c.id, repId: c.repId, warehouseId: c.warehouseId, date: ctx.date, status: "draft", lines, subtotal: t.gross, discount: t.discount, tax: t.tax, total: t.total, invoiceId: null, creditCheck: check, source: p.source ?? "user" };
   let note = "";
   if (p.mode === "confirm" && check.decision !== "block") {
@@ -66,7 +66,7 @@ export function confirmOrder(ctx: Ctx, p: { orderId: string; override?: boolean 
   const so = ctx.db.orders.find((o) => o.id === p.orderId);
   if (!so || so.status !== "draft") return fail("SO_STATE", "Order can't be confirmed", "Only draft orders can be confirmed.", "Open the order to see its status.");
   const c = ctx.db.customers.find((x) => x.id === so.customerId)!;
-  const check = creditCheck(c, customerStats(c.id), so.total);
+  const check = creditCheck(c, customerStats(c.id), so.total, ctx.db.settings.maxOverdueDays);
   if (check.decision === "block" && !p.override) return fail("CRD_BLOCK", "Credit check blocked this order", check.reasons.join(". "), "Request a credit override from the Sales Manager.");
   const r = reserve(ctx, so);
   if (!so.lines.length) return fail("STK_NONE", "Nothing is available to reserve", "No free stock for these products.", "Transfer stock in or reduce the quantity.");
@@ -133,6 +133,7 @@ export function dispatchOrder(ctx: Ctx, p: { orderId: string; vehicle: string; d
   ]);
   audit(ctx, "shipment.dispatched", "Delivery challan", sh.number, `${so.number} · ${sh.vehicle} · ${sh.driver}`);
   audit(ctx, "invoice.approved", "Invoice", inv.number, `${money(inv.total)} · FBR ${inv.fbr.irn} (simulated)`);
+  queue(ctx, "FBR", "FBR Digital Invoicing (PRAL)", `Invoice ${inv.number}`, `Simulated submission. IRN ${inv.fbr.irn}. Payload available on the invoice page.`);
   runAutomations(ctx, "invoice.posted", { amount: inv.total, ref: inv.id, label: `${inv.number} (${c.name})`, href: `/sales/invoices/${inv.id}` });
   for (const l of so.lines) { const k = cell(db, l.productId, so.warehouseId); const p2 = db.products.find((x) => x.id === l.productId)!; if (k.ema > 0.5 && (k.on - k.res) / k.ema < 7) { runAutomations(ctx, "stock.low", { ref: p2.id, label: `${p2.name} at ${db.warehouses.find((w) => w.id === so.warehouseId)!.code}`, href: "/inventory/replenishment" }); break; } }
   return ok({ invoiceId: inv.id, shipmentId: sh.id }, `${sh.number} issued and ${inv.number} approved. FBR reference ${inv.fbr.irn} (simulated).`);

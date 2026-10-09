@@ -1,6 +1,6 @@
 import type { Expense, LeaveRequest } from "../data/types";
 import { diffDays } from "../data/dates";
-import { audit, fail, money, newId, nextNo, notify, ok, type Ctx, type Result } from "./core";
+import { audit, fail, money, newId, nextNo, notify, ok, queue, type Ctx, type Result } from "./core";
 
 export function submitExpense(ctx: Ctx, p: { employeeId: string; category: string; merchant: string; amount: number; purpose: string; date: string; hasReceipt: boolean }): Result<{ id: string }> {
   const db = ctx.db;
@@ -61,6 +61,7 @@ export function queueMessage(ctx: Ctx, p: { customerId: string; channel: "WhatsA
   const c = ctx.db.customers.find((x) => x.id === p.customerId);
   if (!c) return fail("CUS_NOT_FOUND", "Customer not found", "It may have been removed.", "Refresh the page.");
   if (p.text.trim().length < 10) return fail("MSG_EMPTY", "Message is empty", "There is nothing to send.", "Write the message first.");
+  queue(ctx, p.channel, `${c.contact} (${c.name})`, "Payment follow-up", p.text);
   audit(ctx, "message.queued", "Customer", c.name, `${p.channel} follow-up queued (simulated, not sent)`);
   return ok(undefined, "Queued in the outbox (simulated). Nothing was sent; connect WhatsApp in Integrations to deliver for real.");
 }

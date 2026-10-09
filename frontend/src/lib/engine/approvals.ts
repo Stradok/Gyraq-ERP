@@ -18,7 +18,6 @@ export function canDecide(role: Role, type: Approval["type"]): boolean {
   }
 }
 const EXPENSE_GL: Record<string, string> = { Fuel: "6040", Travel: "6100", Meals: "6100", Office: "6110", Repairs: "6060", Telephone: "6070", Entertainment: "6100" };
-export const EXPENSE_FINANCE_LIMIT = 25_000;
 
 function finishExpense(ctx: Ctx, e: Expense) {
   const blocked = assertPostable(ctx.db, ctx.date);
@@ -75,7 +74,7 @@ export function decideApproval(ctx: Ctx, p: { id: string; decision: "approved" |
       const e = db.expenses.find((x) => x.id === a.ref);
       if (!e) { done(); return ok(undefined, "Recorded"); }
       if (!approve) { e.status = "rejected"; done(); log("approval.rejected", `${e.number} rejected`); return ok(undefined, `${e.number} rejected`); }
-      if (a.step === "Line manager" && (e.amount > EXPENSE_FINANCE_LIMIT || e.flags.length)) {
+      if (a.step === "Line manager" && (e.amount > db.settings.expenseFinanceLimit || e.flags.length)) {
         e.status = "manager_approved";
         db.approvals.unshift({ id: newId("apr"), type: "expense", title: a.title, subtitle: `${a.subtitle} · manager approved`, amount: e.amount, requestedBy: a.requestedBy, requestedAt: ctx.date, status: "pending", ref: e.id, source: "user", step: "Finance Manager" });
         done(); log("approval.approved", `${e.number} → Finance`); return ok(undefined, `${e.number} approved by the manager and sent to Finance`);

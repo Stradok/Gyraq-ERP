@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:engine": "tsx tests/engine.test.ts",
     "test:e2e": "node tests/e2e.mjs",
-    "test": "pnpm test:engine"
+    "test": "pnpm test:unit && pnpm test:engine",
+    "test:unit": "tsx tests/unit.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.72",

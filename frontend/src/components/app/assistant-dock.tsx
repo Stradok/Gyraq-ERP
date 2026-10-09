@@ -5,6 +5,7 @@ import { ArrowUp, Check, Loader2, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AiChip } from "./ai";
 import { Md, ToolResultView } from "./ai-results";
+import { checkFigures } from "@/lib/ai/grounding";
 import { useAssistant } from "@/lib/ai/use-assistant";
 import { PERSONAS } from "@/lib/rbac";
 import { useERP } from "@/lib/store";
@@ -47,6 +48,7 @@ export function AssistantDock() {
                 {m.steps.length > 0 && <ul className="space-y-0.5 text-[11px] text-muted-foreground">{m.steps.map((s, i) => <li key={i} className="flex items-center gap-1.5">{s.done ? <Check className="size-3 text-success" /> : <Loader2 className="size-3 animate-spin" />}<span className="font-mono">{s.name}</span></li>)}</ul>}
                 {m.text && <Md text={m.text} />}
                 {m.results.map((r, i) => <ToolResultView key={i} ui={r.ui} />)}
+                {useLlm && !loading && m.text && (() => { const u = checkFigures(m.text, m.results).unverified; return u.length ? <p className="text-[11px] text-warning">Couldn&apos;t verify {u.slice(0, 3).join(", ")} against your data. Check before relying on it.</p> : null; })()}
               </div>
             ))}
             {loading && <div className="flex items-center gap-2 text-xs text-muted-foreground"><span className="ai-dot size-2 rounded-full bg-ai" />Working…</div>}
