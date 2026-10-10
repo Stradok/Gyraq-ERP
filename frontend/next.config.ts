@@ -6,6 +6,7 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  ...(process.env.BUILD_STANDALONE ? { output: "standalone" as const } : {}), // self-hosted Docker image
   ...(basePath ? { basePath } : {}),
 };
 

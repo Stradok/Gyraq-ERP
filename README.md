@@ -18,3 +18,6 @@ pnpm test:e2e       # browser flows (needs dev server running and: pnpm exec pla
 ```
 
 See `docs/MIGRATION.md` for how the demo engine maps to a real backend and how to switch the AI provider.
+
+## Self-hosted stack (Postgres + API + web)
+`docker compose up -d --build`, then open http://localhost:3000. See [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).

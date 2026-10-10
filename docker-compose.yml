@@ -1,4 +1,4 @@
-# Self-hosted Meridian ERP:  docker compose up -d   (API on :4000, Postgres on :5433)
+# Self-hosted Meridian ERP:  docker compose up -d   (web :3000, API :4000, Postgres :5433)
 name: meridian
 services:
   db:
@@ -16,6 +16,19 @@ services:
       DEMO_PASSWORD: "${DEMO_PASSWORD:-meridian-demo}"
       CORS_ORIGIN: "${CORS_ORIGIN:-*}"
     ports: ["4000:4000"]
+    restart: unless-stopped
+  web:
+    build:
+      context: ./frontend
+      args: { NEXT_PUBLIC_API_URL: "${PUBLIC_API_URL:-http://localhost:4000}" }
+    depends_on: { api: { condition: service_healthy } }
+    environment:
+      API_URL: http://api:4000
+      AI_EDITION: "${AI_EDITION:-demo}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      GOOGLE_GENERATIVE_AI_API_KEY: "${GOOGLE_GENERATIVE_AI_API_KEY:-}"
+    ports: ["3000:3000"]
     restart: unless-stopped
 volumes:
   pgdata: {}
