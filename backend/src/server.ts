@@ -28,18 +28,60 @@ app.post("/auth/login", async (c) => {
   const u = (await pool.query("select * from users where lower(email)=lower($1) and active", [email])).rows[0];
   if (!u || !verifyPassword(password, u.pw_hash)) return c.json({ error: "Wrong email or password." }, 401);
   const s = { sub: u.id as string, email: u.email as string, name: u.name as string, role: u.role, emp: u.emp_name as string };
-  return c.json({ token: issue(s), user: { id: s.sub, email: s.email, name: s.name, title: u.title, role: s.role } });
+  return c.json({ token: issue(s), user: { id: s.sub, email: s.email, name: s.name, title: u.title, role: s.role, emp: s.emp } });
 });
 
 const guard = async (c: Context<Env>, next: () => Promise<void>) => {
   const t = (c.req.header("authorization") ?? "").replace(/^Bearer /, "");
   const s = t ? verify(t) : null;
   if (!s) return c.json({ error: "Sign in again." }, 401);
-  c.set("session", s); await next();
+  // Role and active flag come from the database each time, so a change or deactivation takes effect at once.
+  const u = (await pool.query("select role, active from users where id=$1", [s.sub])).rows[0];
+  if (!u?.active) return c.json({ error: "This account is disabled." }, 401);
+  c.set("session", { ...s, role: u.role }); await next();
 };
 app.use("/api/*", guard);
 
 app.get("/api/me", (c) => c.json(c.get("session")));
+
+// ── user management (Owner and Admin) ──
+const ROLES = ["owner", "admin", "finance", "sales_manager", "rep", "warehouse", "procurement", "employee"];
+const isAdmin = (s: Session) => s.role === "owner" || s.role === "admin";
+const noAccess = (c: Context<Env>) => c.json({ error: "Only the Owner or Admin can manage users." }, 403);
+app.get("/api/users", async (c) => {
+  if (!isAdmin(c.get("session"))) return noAccess(c);
+  return c.json({ users: (await pool.query("select id,email,name,title,role,emp_name as emp,active,created_at from users order by created_at, email")).rows });
+});
+app.post("/api/users", async (c) => {
+  if (!isAdmin(c.get("session"))) return noAccess(c);
+  const b = await c.req.json<{ email?: string; name?: string; title?: string; role?: string; password?: string; emp?: string }>().catch(() => ({} as Record<string, string>));
+  const email = (b.email ?? "").trim().toLowerCase(), name = (b.name ?? "").trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return c.json({ error: "Enter a valid email." }, 400);
+  if (name.length < 3) return c.json({ error: "Enter the person's full name." }, 400);
+  if (!b.role || !ROLES.includes(b.role)) return c.json({ error: "Pick a role." }, 400);
+  if (b.role === "owner" && c.get("session").role !== "owner") return c.json({ error: "Only an Owner can create another Owner." }, 403);
+  if ((b.password ?? "").length < 8) return c.json({ error: "Password must be at least 8 characters." }, 400);
+  const emp = b.emp ?? name;
+  if (!world.employees.some((e) => e.name === emp)) return c.json({ error: `No employee named "${emp}". Add them under Employees first, then link the user to that employee.` }, 400);
+  if ((await pool.query("select 1 from users where lower(email)=$1", [email])).rowCount) return c.json({ error: "A user with this email already exists." }, 409);
+  const r = await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6) returning id", [email, name, b.title ?? "", b.role, emp, hashPassword(b.password!)]);
+  return c.json({ ok: true, id: r.rows[0].id });
+});
+app.patch("/api/users/:id", async (c) => {
+  const s = c.get("session"); if (!isAdmin(s)) return noAccess(c);
+  const id = c.req.param("id");
+  const b = await c.req.json<{ role?: string; active?: boolean; password?: string; title?: string }>().catch(() => ({} as Record<string, never>));
+  const target = (await pool.query("select id, role, active from users where id=$1", [id])).rows[0];
+  if (!target) return c.json({ error: "User not found." }, 404);
+  if ((target.role === "owner" || b.role === "owner") && s.role !== "owner") return c.json({ error: "Only an Owner can change an Owner." }, 403);
+  if (id === s.sub && (b.active === false || (b.role && b.role !== s.role))) return c.json({ error: "You can't disable or change the role of your own account." }, 400);
+  if (b.role && !ROLES.includes(b.role)) return c.json({ error: "Unknown role." }, 400);
+  if (b.password !== undefined && b.password.length < 8) return c.json({ error: "Password must be at least 8 characters." }, 400);
+  const demotes = (target.role === "owner" && ((b.role && b.role !== "owner") || b.active === false));
+  if (demotes && (await pool.query("select count(*)::int n from users where role='owner' and active")).rows[0].n < 2) return c.json({ error: "There must always be at least one active Owner." }, 400);
+  await pool.query("update users set role=coalesce($2,role), active=coalesce($3,active), title=coalesce($4,title), pw_hash=coalesce($5,pw_hash) where id=$1", [id, b.role ?? null, b.active ?? null, b.title ?? null, b.password ? hashPassword(b.password) : null]);
+  return c.json({ ok: true });
+});
 
 /** Everything a browser needs to rebuild the shared state: the seed anchor and every command so far. */
 app.get("/api/bootstrap", async (c) => c.json({ anchor: world.today, commands: await commandsSince(0), session: c.get("session") }));

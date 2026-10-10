@@ -56,6 +56,23 @@ assert.equal(first.status, 200, JSON.stringify(first.body)); assert.equal(first.
 assert.equal((await call("/api/commands", { method: "POST", token: owner, body: JSON.stringify({ type: "CreateLead", payload: lead, id: "c-lead-12345", baseSeq: head + 5 }) })).status, 409, "same command id is not applied twice");
 console.log("  ✓ stale clients rejected, client ids kept, no double-apply");
 
+const emp = (await pool.query("select data->>'name' as n from records where kind='employees' order by id limit 1")).rows[0].n as string;
+assert.equal((await call("/api/users", { token: rep })).status, 403, "rep can't list users");
+const mk = (b: object) => call("/api/users", { method: "POST", token: owner, body: JSON.stringify(b) });
+assert.equal((await mk({ email: "new@x.com", name: "New Person", role: "rep", password: "short", emp })).status, 400, "weak password");
+assert.equal((await mk({ email: "new@x.com", name: "New Person", role: "rep", password: "long-enough-1", emp: "Nobody Here" })).status, 400, "must link to an employee");
+const made = await mk({ email: "new@x.com", name: "New Person", title: "Order Booker", role: "rep", password: "long-enough-1", emp });
+assert.equal(made.status, 200, JSON.stringify(made.body)); assert.equal((await mk({ email: "NEW@x.com", name: "New Person", role: "rep", password: "long-enough-1", emp })).status, 409, "duplicate email");
+const newTok = (await call("/auth/login", { method: "POST", body: JSON.stringify({ email: "new@x.com", password: "long-enough-1" }) })).body.token as string; assert.ok(newTok, "new user can sign in");
+assert.equal((await call("/api/me", { token: newTok })).body.role, "rep");
+await call(`/api/users/${made.body.id}`, { method: "PATCH", token: owner, body: JSON.stringify({ role: "warehouse" }) });
+assert.equal((await cmd(newTok, "CreateOrder", {})).status, 403, "role change applies on the existing token immediately");
+await call(`/api/users/${made.body.id}`, { method: "PATCH", token: owner, body: JSON.stringify({ active: false }) });
+assert.equal((await call("/api/me", { token: newTok })).status, 401, "disabled user is locked out at once");
+const ownerId = (await call("/api/me", { token: owner })).body.sub;
+assert.equal((await call(`/api/users/${ownerId}`, { method: "PATCH", token: owner, body: JSON.stringify({ active: false }) })).status, 400, "can't disable yourself");
+console.log("  ✓ user management: create, validation, role change, disable, self-protection");
+
 console.log("Postgres state");
 const row = (await pool.query("select data from records where kind='customers' and id=$1", [custId])).rows[0];
 assert.equal(row.data.name, "API Test Mart", "projected into records");

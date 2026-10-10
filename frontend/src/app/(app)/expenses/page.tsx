@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { useState } from "react";
 import { Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ function Submit({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
   const [step, setStep] = useState<"form" | "scan" | "review">("form");
   const role = useERP((s) => s.role);
   const db = getDB();
-  const me = db.employees.find((e) => e.name === PERSONAS.find((p) => p.role === role)!.empName)!;
+  const me = db.employees.find((e) => e.name === useMe().empName)!;
   const [f, setF] = useState({ category: "Fuel", merchant: "", amount: "", purpose: "", date: db.today, receipt: false });
   const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }));
   return (
@@ -51,7 +52,7 @@ export default function Expenses() {
   const db = getDB();
   const role = useERP((s) => s.role);
   const [open, setOpen] = useState(false);
-  const me = db.employees.find((e) => e.name === PERSONAS.find((p) => p.role === role)!.empName);
+  const me = db.employees.find((e) => e.name === useMe().empName);
   const rows = role === "employee" || role === "rep" ? db.expenses.filter((e) => e.employeeId === me?.id || e.employeeId === db.employees.find((x) => x.name === "Kashif Raza")?.id) : db.expenses;
   return (
     <>

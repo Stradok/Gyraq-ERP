@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -128,7 +129,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNav, setMobileNav] = useState(false);
   const approvals = useApprovals();
   const pending = approvals.filter((a) => a.status === "pending").length;
-  const persona = PERSONAS.find((p) => p.role === role)!;
+  const persona = useMe();
 
   const version = useWorld((s) => s.version);
   useEffect(() => {

@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Plus, Trash2, X } from "lucide-react";
@@ -24,7 +25,7 @@ export default function NewOrder() {
   const router = useRouter();
   const role = useERP((s) => s.role);
   const db = getDB();
-  const me = db.employees.find((e) => e.name === PERSONAS.find((p) => p.role === role)!.empName);
+  const me = db.employees.find((e) => e.name === useMe().empName);
   const custs = role === "rep" ? db.customers.filter((c) => c.repId === me?.id) : db.customers;
   const [cid, setCid] = useState(custs[0]!.id);
   const [rows, setRows] = useState<Row[]>([]);

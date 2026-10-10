@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import Link from "next/link";
 import { useMemo } from "react";
 import { ArrowRight, Check, GraduationCap, X } from "lucide-react";
@@ -32,7 +33,7 @@ export default function OverviewPage() {
   const aging = useMemo(() => arAging(), []);
   const cp = useMemo(() => cashProjection(ov.newlyApproved), [ov.newlyApproved]);
   const showFinance = role === "owner" || role === "admin" || role === "finance";
-  const persona = PERSONAS.find((p) => p.role === role)!;
+  const persona = useMe();
 
   const ar = k.ar - ov.paidTotal, cash = k.cash + ov.cashIn, overdue = Math.max(0, k.overdue - ov.paidTotal * 0.4);
   const rev = months.slice(-12);

@@ -10,7 +10,7 @@ import { execute, replay, type CommandRecord } from "./commands";
 
 export const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 export const remote = !!API;
-export interface SessionUser { id: string; email: string; name: string; title: string; role: Role }
+export interface SessionUser { id: string; email: string; name: string; title: string; role: Role; emp: string }
 
 const TOKEN = "meridian-token", USER = "meridian-user";
 const safe = <T,>(fn: () => T, d: T): T => { try { return fn(); } catch { return d; } };
@@ -43,7 +43,7 @@ export async function loadRemoteWorld(): Promise<boolean> {
   state.applied = new Set(); state.lastSeq = 0;
   replay(db, b.commands);
   for (const c of b.commands) { state.applied.add(c.id); state.lastSeq = Math.max(state.lastSeq, c.seq); }
-  useERP.setState({ role: b.session.role });
+  const u = getUser(); useERP.setState({ role: b.session.role, user: u ? { ...u, role: b.session.role } : null });
   useWorld.getState().setReady(); useWorld.getState().bump();
   return true;
 }
@@ -83,4 +83,11 @@ export function startPolling() {
     for (const c of commands) state.lastSeq = Math.max(state.lastSeq, c.seq);
     if (fresh.length) useWorld.getState().bump();
   }, 4000);
+}
+
+/** Authenticated call to the API for non-command endpoints (user management). */
+export async function apiJson<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<{ ok: boolean; status: number; data: T & { error?: string } }> {
+  const r = await fetch(`${API}${path}`, { method: init.method ?? "GET", headers: auth(), body: init.body === undefined ? undefined : JSON.stringify(init.body) }).catch(() => null);
+  if (!r) return { ok: false, status: 0, data: { error: "Can't reach the server." } as T & { error?: string } };
+  return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
 }

@@ -1,4 +1,5 @@
 "use client";
+import { meNow } from "@/lib/me";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -65,7 +66,7 @@ export default function CustomerDetail() {
             <DropdownMenuItem onClick={() => toast.info("Simulated: WhatsApp queued", { description: "Nothing was sent; see Integrations → outbox." })}><MessageCircle />WhatsApp</DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push(`/ai?q=${encodeURIComponent(`Draft a collection follow-up for ${c.name}`)}`)}><Mail />Draft follow-up with AI</DropdownMenuItem>
           </DropdownMenuContent></DropdownMenu></>} />
-      <CreditLimitDialog key={String(limitOpen)} open={limitOpen} onOpenChange={setLimitOpen} customerId={id} requestedBy={PERSONAS.find((p) => p.role === role)!.name} />
+      <CreditLimitDialog key={String(limitOpen)} open={limitOpen} onOpenChange={setLimitOpen} customerId={id} requestedBy={meNow().name} />
       <Page>
         {c.status === "on_hold" && <div className="rounded-lg border border-warning/40 bg-warning/5 px-4 py-3 text-[13px]"><b>On credit hold.</b> {c.holdReason ?? ""} New orders are blocked until the hold is released.</div>}
         <div className="grid gap-4 lg:grid-cols-3">

@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
@@ -26,7 +27,7 @@ const STARTERS: Record<string, string[]> = {
 function Chat() {
   const sp = useSearchParams();
   const role = useERP((s) => s.role);
-  const persona = PERSONAS.find((p) => p.role === role)!;
+  const persona = useMe();
   const [llm, setLlm] = useState<{ enabled: boolean; model: string; provider: string } | null>(null);
   const history = useERP((s) => s.history);
   const [msgs, setMsgs] = useState<VMsg[]>([]);

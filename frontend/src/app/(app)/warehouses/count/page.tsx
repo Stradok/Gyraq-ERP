@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ClipboardCheck } from "lucide-react";
@@ -25,7 +26,7 @@ function Count() {
   // The sheet is the 8 highest-value stocked lines at this warehouse (a cycle count of A-class items).
   const sheet = useMemo(() => stockRows().filter((r) => r.warehouseId === wh && r.on > 0).sort((a, b) => b.value - a.value).slice(0, 8), [wh, db.stock.size, result]); // eslint-disable-line react-hooks/exhaustive-deps
   const scan = (code: string) => { const r = sheet.find((x) => x.product.barcode === code); if (!r) return false; setVals((v) => ({ ...v, [r.product.id]: String((+(v[r.product.id] ?? 0) || 0) + 1) })); return true; };
-  const counter = PERSONAS.find((p) => p.role === role)!.name;
+  const counter = useMe().name;
   const submit = () => {
     const lines = sheet.filter((r) => vals[r.product.id] !== undefined && vals[r.product.id] !== "").map((r, i) => ({ productId: r.product.id, counted: +vals[r.product.id]!, location: `${"ABCDE"[i % 5]}-${(i % 9) + 1}-0${(i % 4) + 1}` }));
     const r = run("PostCount", { warehouseId: wh, counter, lines });

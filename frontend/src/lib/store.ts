@@ -11,6 +11,7 @@ export interface RecentItem { href: string; title: string }
 export interface SavedView { label: string; filters: Record<string, string>; search: string }
 
 interface State {
+  user: { id: string; email: string; name: string; title: string; role: Role; emp: string } | null;
   role: Role;
   collapsed: boolean;
   favorites: RecentItem[];
@@ -39,7 +40,7 @@ interface State {
   reset: () => void;
 }
 
-const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], dismissReasons: {} as Record<string, string>, readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], savedViews: {} as Record<string, SavedView[]>, history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
+const initial = { user: null as State["user"], role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], dismissReasons: {} as Record<string, string>, readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], savedViews: {} as Record<string, SavedView[]>, history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
 
 export const useERP = create<State>()(
   persist(

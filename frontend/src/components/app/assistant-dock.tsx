@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ArrowUp, Check, Loader2, RotateCcw, X } from "lucide-react";
@@ -16,7 +17,7 @@ const IDEAS = ["Show revenue from 1 Sep to 30 Sep by category", "Open overdue in
 
 export function AssistantDock() {
   const role = useERP((s) => s.role);
-  const p = PERSONAS.find((x) => x.role === role)!;
+  const p = useMe();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
