@@ -7,6 +7,7 @@ import { interpret, parseAmount } from "../src/lib/nl";
 import { answerLocal, INSUFFICIENT } from "../src/lib/ai/local";
 import { findGuide } from "../src/lib/ai/guide";
 import { validateExtraction } from "../src/lib/ai/extract";
+import { route, edition } from "../src/lib/ai/provider";
 import { checkFigures } from "../src/lib/ai/grounding";
 import { runTool } from "../src/lib/ai/tools";
 
@@ -60,6 +61,18 @@ runOn(db, () => {
   assert.match(runTool("open_page", { path: "/finance/statements" }, "warehouse").summary, /ACCESS DENIED/, "warehouse can't open finance");
   assert.doesNotMatch(runTool("open_page", { path: "/warehouses" }, "warehouse").summary, /ACCESS DENIED/, "warehouse can open warehouses");
   console.log("  ✓ assistant respects role access");
+
+  const keep = { ...process.env };
+  const env = (e: Record<string, string>) => { for (const k of Object.keys(process.env)) if (/^(AI_|OPENROUTER|ANTHROPIC|GOOGLE)/.test(k)) delete process.env[k]; Object.assign(process.env, e); };
+  env({ OPENROUTER_API_KEY: "x" }); assert.equal(edition(), "demo"); assert.equal(route("reasoning")!.provider, "openrouter");
+  env({ AI_EDITION: "premium", ANTHROPIC_API_KEY: "a", GOOGLE_GENERATIVE_AI_API_KEY: "g" });
+  assert.deepEqual([route("reasoning")!.provider, route("fast")!.provider, route("vision")!.provider, route("agent")!.provider], ["anthropic", "anthropic", "gemini", "anthropic"], "premium routing per task");
+  env({ AI_EDITION: "premium", GOOGLE_GENERATIVE_AI_API_KEY: "g" }); assert.equal(route("reasoning")!.provider, "gemini", "falls back to a provider that has a key");
+  env({ AI_EDITION: "standard", GOOGLE_GENERATIVE_AI_API_KEY: "g", AI_MODEL_FAST: "gemini-x" }); assert.deepEqual(route("fast")!.models, ["gemini-x"], "model override");
+  env({ AI_EDITION: "premium", ANTHROPIC_API_KEY: "a", AI_PROVIDER_VISION: "anthropic" }); assert.equal(route("vision")!.provider, "anthropic", "per-task provider override");
+  env({}); assert.equal(route("reasoning"), null, "no key → computed mode");
+  Object.assign(process.env, keep);
+  console.log("  ✓ AI edition routing (demo / standard / premium, fallbacks, overrides)");
 
   console.log("FBR mapper on seeded invoices");
   let bad = 0;
