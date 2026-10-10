@@ -136,6 +136,7 @@ expectFail(run("CreateEmployee", base, "finance"), "EMP_CNIC_DUP", "duplicate CN
 expectOk(run("UpdateEmployee", { id: emp.id, salary: 70_000 }, "finance"), "raise salary");
 assert.equal(db.employees.find((e) => e.id === emp.id)!.salary, 70_000);
 expectFail(run("UpdateEmployee", { id: emp.id, managerId: emp.id }, "finance"), "EMP_MANAGER", "self-manager");
+assert.ok(db.leaves.filter((l) => l.status === "pending").every((l) => db.approvals.some((a) => a.type === "leave" && a.ref === l.id && a.status === "pending")), "every pending leave has an approval");
 const lv = expectOk(run("SubmitLeave", { employeeId: emp.id, type: "Annual", from: db.today, to: db.today, reason: "x" }, "owner"), "leave").value as { id: string };
 const lva = db.approvals.find((a) => a.type === "leave" && a.ref === lv.id)!;
 expectOk(run("DecideApproval", { id: lva.id, decision: "approved" }), "approve leave");
