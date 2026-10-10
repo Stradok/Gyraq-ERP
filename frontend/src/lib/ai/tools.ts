@@ -2,6 +2,7 @@
 // plus a `ui` payload for rendering. Propose-tools never write: they return a proposal a human must confirm.
 // Runs on the server (LLM mode) and in the browser (computed mode) with identical behaviour.
 import { z } from "zod";
+import { canSee, type Module, type Role } from "../rbac";
 import { arAging, cashProjection, customerStats, getDB, idx, insights, pl, profitVariance, recommendations, salesBy, stockRows, supplierStats } from "../data/queries";
 import { addDays } from "../data/dates";
 import { filterCustomers, customerRows, type CustomerFilter } from "../nl";
@@ -247,7 +248,24 @@ export const TOOLS = {
 } as const;
 
 export type ToolName = keyof typeof TOOLS;
-export function runTool(name: ToolName, args: unknown): ToolResult {
+const EVERYONE: Role[] = ["owner", "admin", "finance", "sales_manager", "rep", "warehouse", "procurement", "employee"];
+const FIN: Role[] = ["owner", "admin", "finance"];
+/** Which roles may use each tool. The owner and admin are always included. Enforced here so a model can't be talked into leaking data a role can't see in the UI. */
+export const TOOL_ROLES: Record<ToolName, Role[]> = {
+  search_customers: ["owner", "admin", "finance", "sales_manager", "rep"], get_customer: ["owner", "admin", "finance", "sales_manager", "rep"], draft_collection_message: ["owner", "admin", "finance", "sales_manager"],
+  get_ar_aging: ["owner", "admin", "finance", "sales_manager"], get_replenishment_recommendations: ["owner", "admin", "procurement", "warehouse", "finance"], get_stock_position: ["owner", "admin", "finance", "sales_manager", "rep", "warehouse", "procurement"],
+  get_sales_metrics: ["owner", "admin", "finance", "sales_manager", "procurement"], explain_profit_change: FIN, get_cashflow_projection: FIN, get_expense_breakdown: ["owner", "admin", "finance", "sales_manager"],
+  get_anomalies: FIN, get_supplier_scorecard: ["owner", "admin", "finance", "procurement"], resolve_period: EVERYONE, how_to: EVERYONE, get_revenue: ["owner", "admin", "finance", "sales_manager", "procurement"], open_page: EVERYONE,
+  propose_record_payment: ["owner", "admin", "finance", "sales_manager", "rep"], propose_purchase_order: ["owner", "admin", "procurement"], propose_credit_hold: ["owner", "admin", "sales_manager", "finance"],
+};
+const PAGE_MODULE: [RegExp, Module][] = [[/^\/sales/, "sales"], [/^\/customers/, "customers"], [/^\/inventory/, "inventory"], [/^\/purchasing/, "purchasing"], [/^\/finance/, "finance"], [/^\/reports/, "reports"], [/^\/warehouses/, "warehouses"], [/^\/suppliers/, "suppliers"], [/^\/employees/, "employees"], [/^\/expenses/, "expenses"], [/^\/approvals/, "approvals"]];
+
+export function runTool(name: ToolName, args: unknown, role?: Role): ToolResult {
+  if (role && !TOOL_ROLES[name].includes(role)) {
+    const who = TOOL_ROLES[name].filter((r) => r === "owner" || r === "admin" || r === "finance" || r === "sales_manager" || r === "procurement" || r === "warehouse").join(", ").replace(/_/g, " ");
+    return { summary: `ACCESS DENIED: the user's role (${role.replace("_", " ")}) is not allowed to use ${name}. Do not answer from other tools. Tell the user this is outside their role, name who can see it (${who}), and that they can switch persona at the bottom of the sidebar.`, ui: { kind: "none", reason: `Your role (${role.replace("_", " ")}) doesn't have access to this. Roles with access: ${who}. Switch persona at the bottom of the sidebar to try it.` } };
+  }
+  if (role && name === "open_page") { const path = String((args as { path?: string })?.path ?? ""); const m = PAGE_MODULE.find(([re]) => re.test(path))?.[1]; if (m && !canSee(role, m)) return { summary: `ACCESS DENIED: ${path} is not available to the ${role.replace("_", " ")} role.`, ui: { kind: "none", reason: `Your role doesn't have access to ${path}. Switch persona at the bottom of the sidebar to try it.` } }; }
   const t = TOOLS[name];
   const parsed = t.input.parse(args ?? {});
   return (t.run as (a: unknown) => ToolResult)(parsed);

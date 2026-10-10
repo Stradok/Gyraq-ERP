@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const tools = Object.fromEntries((Object.keys(TOOLS) as ToolName[]).map((name) => [name, tool({
     description: TOOLS[name].description,
     inputSchema: TOOLS[name].input as unknown as z.ZodType<Record<string, unknown>>,
-    execute: async (args: Record<string, unknown>) => { const r = inWorld(world, () => runTool(name, args)); return { summary: r.summary, ui: r.ui, records: r.records, metrics: r.metrics }; },
+    execute: async (args: Record<string, unknown>) => { const r = inWorld(world, () => runTool(name, args, body.role)); return { summary: r.summary, ui: r.ui, records: r.records, metrics: r.metrics }; },
     // The model reads only the compact summary; the UI payload is rendered client-side.
     toModelOutput: ({ output }) => ({ type: "text", value: (output as { summary: string }).summary }),
   })]));

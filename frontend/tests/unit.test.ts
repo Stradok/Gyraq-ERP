@@ -54,6 +54,11 @@ runOn(db, () => {
 
   assert.match(answerLocal("how do I create a sales order", undefined, "finance").text, /can.t do this[\s\S]*owner/, "finance told they can't create orders");
   assert.doesNotMatch(answerLocal("how do I create a sales order", undefined, "owner").text, /can't do this/, "owner allowed");
+  const denied = runTool("get_revenue", { from: "2026-09-01", to: "2026-09-30" }, "warehouse");
+  assert.match(denied.summary, /ACCESS DENIED/, "warehouse can't read revenue");
+  assert.doesNotMatch(runTool("get_revenue", { from: "2026-09-01", to: "2026-09-30" }, "owner").summary, /ACCESS DENIED/, "owner can");
+  assert.match(runTool("open_page", { path: "/finance/statements" }, "warehouse").summary, /ACCESS DENIED/, "warehouse can't open finance");
+  assert.doesNotMatch(runTool("open_page", { path: "/warehouses" }, "warehouse").summary, /ACCESS DENIED/, "warehouse can open warehouses");
   console.log("  ✓ assistant respects role access");
 
   console.log("FBR mapper on seeded invoices");

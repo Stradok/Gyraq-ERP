@@ -22,7 +22,7 @@ const denied = (title: string, role?: Role) => {
 };
 export function answerLocal(q: string, prevTopic?: string, role?: Role): LocalAnswer {
   const s = q.toLowerCase();
-  const run = (steps: Step[]) => steps.map((st) => runTool(st.tool, st.args));
+  const run = (steps: Step[]) => steps.map((st) => runTool(st.tool, st.args, role));
   const mk = (topic: string, steps: Step[], compose: (r: ToolResult[]) => string, suggestions?: string[]): LocalAnswer => { const results = run(steps); return { status: "answered", steps, results, text: compose(results), topic, suggestions }; };
 
   if (/forecast .*(next year|annual)|churn|satisfaction|market share|competitor|headcount plan|employee turnover|attrition|nps\b/.test(s)) {
