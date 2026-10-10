@@ -127,6 +127,30 @@ const bigJ = db.approvals.find((a) => a.type === "journal" && a.payload?.lines)!
 expectOk(run("DecideApproval", { id: bigJ.id, decision: "approved" }, "owner", "Tariq Mehmood"), "second approver posts JE");
 integrity("approvals");
 
+console.log("Employees, leave, payroll");
+const base = { name: "Test Person", department: "Sales", position: "Order Booker", managerId: null, branch: "Karachi", joinDate: db.today, salary: 60_000, phone: "", email: "t@x.com", cnic: "42101-1234567-1", status: "active" as const };
+expectFail(run("CreateEmployee", base, "rep"), "HR_FORBIDDEN", "rep can't add staff");
+expectFail(run("CreateEmployee", { ...base, cnic: "123" }, "finance"), "EMP_CNIC", "bad CNIC");
+const emp = expectOk(run("CreateEmployee", base, "finance"), "create employee").value as { id: string };
+expectFail(run("CreateEmployee", base, "finance"), "EMP_CNIC_DUP", "duplicate CNIC");
+expectOk(run("UpdateEmployee", { id: emp.id, salary: 70_000 }, "finance"), "raise salary");
+assert.equal(db.employees.find((e) => e.id === emp.id)!.salary, 70_000);
+expectFail(run("UpdateEmployee", { id: emp.id, managerId: emp.id }, "finance"), "EMP_MANAGER", "self-manager");
+const lv = expectOk(run("SubmitLeave", { employeeId: emp.id, type: "Annual", from: db.today, to: db.today, reason: "x" }, "owner"), "leave").value as { id: string };
+const lva = db.approvals.find((a) => a.type === "leave" && a.ref === lv.id)!;
+expectOk(run("DecideApproval", { id: lva.id, decision: "approved" }), "approve leave");
+assert.equal(db.leaves.find((l) => l.id === lv.id)!.status, "approved");
+expectFail(run("RunPayroll", { month: db.payroll[0]!.month }, "finance"), "PAY_DUP", "no double payroll");
+expectFail(run("RunPayroll", { month: db.today.slice(0, 7) }, "finance"), "PAY_FUTURE", "current month not ended");
+{ // a separate world: re-run the latest month as if unpaid; the ledger must stay balanced and the run must be recorded
+  const w = buildDB(); const seeded = w.payroll.shift()!; const before = w.journal.length;
+  const r = execute(w, { id: "pay1", type: "RunPayroll", payload: { month: seeded.month }, at: `${w.today}T10:00:00+05:00`, date: w.today, actor: "Ayesha Siddiqui", role: "finance", source: "user" });
+  assert.ok(r.ok, "payroll run ok");
+  assert.equal(w.payroll[0]!.month, seeded.month); assert.equal(w.journal.length, before + 2);
+  assert.equal(w.journal.reduce((x, j) => x + j.lines.reduce((y, l) => y + l.debit - l.credit, 0), 0) < 0.5, true);
+}
+integrity("employees");
+
 console.log("Replay determinism");
 const fresh = buildDB();
 const r = replay(fresh, LOG);

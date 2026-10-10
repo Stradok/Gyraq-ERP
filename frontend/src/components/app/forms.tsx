@@ -224,3 +224,82 @@ export function DepositCashDialog({ open, onOpenChange }: DlgProps) {
   );
 }
 void (null as unknown as CustomerPayment);
+
+const DEPARTMENTS = ["Sales", "Warehouse", "Procurement", "Finance", "Administration", "Management"];
+export function EmployeeDialog({ open, onOpenChange, employee, onCreated }: DlgProps & { employee?: import("@/lib/data/types").Employee; onCreated?: (id: string) => void }) {
+  const db = getDB();
+  const blank = { name: "", department: "Sales", position: "", manager: "none", branch: db.warehouses[0]?.city ?? "Karachi", join: db.today, salary: "", phone: "", email: "", cnic: "", status: "active" };
+  const from = (e: NonNullable<typeof employee>) => ({ ...blank, name: e.name, department: e.department, position: e.position, manager: e.managerId ?? "none", branch: e.branch, join: e.joinDate, salary: String(e.salary), phone: e.phone, email: e.email, cnic: e.cnic, status: e.status });
+  const [f, setF] = useState(employee ? from(employee) : blank);
+  const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const [err, setErr] = useState<Problem | null>(null);
+  const branches = [...new Set(db.employees.map((e) => e.branch))];
+  const depts = [...new Set([...DEPARTMENTS, ...db.employees.map((e) => e.department)])];
+  const finish = (r: ReturnType<typeof run>) => { if (!r.ok) { setErr(r.error); return; } if (r.message) toast.success(r.message); setErr(null); onOpenChange(false); if (!employee) { onCreated?.((r.value as { id: string }).id); setF(blank); } };
+  const managerId = f.manager === "none" ? null : f.manager;
+  const submit = () => finish(employee
+    ? run("UpdateEmployee", { id: employee.id, position: f.position, department: f.department, managerId, branch: f.branch, salary: +f.salary || 0, phone: f.phone, email: f.email, status: f.status as never }, { quiet: true })
+    : run("CreateEmployee", { name: f.name, department: f.department, position: f.position, managerId, branch: f.branch, joinDate: f.join, salary: +f.salary || 0, phone: f.phone, email: f.email, cnic: f.cnic, status: f.status as never }, { quiet: true }));
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader><DialogTitle>{employee ? `Edit ${employee.name}` : "New employee"}</DialogTitle><DialogDescription>{employee ? "Name, CNIC and join date are fixed. Changes are written to the audit log." : "Salary is gross monthly. The employee is included in the next payroll run."}</DialogDescription></DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {!employee && <div className="sm:col-span-2"><Field label="Full name"><Input aria-label="Full name" value={f.name} onChange={(e) => set("name", e.target.value)} /></Field></div>}
+          <Field label="Department"><Sel value={f.department} onChange={(v) => set("department", v)} options={depts.map((d) => ({ value: d, label: d }))} /></Field>
+          <Field label="Position"><Input aria-label="Position" value={f.position} onChange={(e) => set("position", e.target.value)} placeholder="e.g. Order Booker" /></Field>
+          <Field label="Reports to"><Sel value={f.manager} onChange={(v) => set("manager", v)} options={[{ value: "none", label: "No manager" }, ...db.employees.filter((e) => e.id !== employee?.id).map((e) => ({ value: e.id, label: e.name }))]} /></Field>
+          <Field label="Branch"><Sel value={f.branch} onChange={(v) => set("branch", v)} options={branches.map((b) => ({ value: b, label: b }))} /></Field>
+          <Field label="Monthly salary (Rs)"><Input aria-label="Salary" inputMode="numeric" className="tabular" value={f.salary} onChange={(e) => set("salary", e.target.value.replace(/\D/g, ""))} /></Field>
+          <Field label="Status"><Sel value={f.status} onChange={(v) => set("status", v)} options={[{ value: "active", label: "Active" }, { value: "probation", label: "Probation" }, { value: "on_leave", label: "On leave" }]} /></Field>
+          <Field label="Phone"><Input aria-label="Phone" value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="0300-1234567" /></Field>
+          <Field label="Email"><Input aria-label="Email" value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
+          {!employee && <Field label="CNIC" hint="Format 12345-1234567-1"><Input aria-label="CNIC" value={f.cnic} onChange={(e) => set("cnic", e.target.value)} /></Field>}
+          {!employee && <Field label="Join date"><Input aria-label="Join date" type="date" max={db.today} value={f.join} onChange={(e) => set("join", e.target.value)} /></Field>}
+        </div>
+        <ProblemBox p={err} />
+        <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={submit}>{employee ? "Save changes" : "Add employee"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function LeaveDialog({ open, onOpenChange, employeeId }: DlgProps & { employeeId: string }) {
+  const db = getDB();
+  const [f, setF] = useState({ type: "Annual", from: db.today, to: db.today, reason: "" });
+  const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const { err, submit } = useSubmit("SubmitLeave", () => onOpenChange(false));
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Request leave</DialogTitle><DialogDescription>For {idx().emp.get(employeeId)?.name}. Goes to the line manager for approval.</DialogDescription></DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2"><Field label="Type"><Sel value={f.type} onChange={(v) => set("type", v)} options={["Annual", "Sick", "Casual"].map((t) => ({ value: t, label: t }))} /></Field></div>
+          <Field label="From"><Input aria-label="From" type="date" value={f.from} onChange={(e) => set("from", e.target.value)} /></Field>
+          <Field label="To"><Input aria-label="To" type="date" min={f.from} value={f.to} onChange={(e) => set("to", e.target.value)} /></Field>
+          <div className="sm:col-span-2"><Field label="Reason"><Input aria-label="Reason" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></Field></div>
+        </div>
+        <ProblemBox p={err} />
+        <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => submit({ employeeId, type: f.type as never, from: f.from, to: f.to, reason: f.reason })}>Send request</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function RunPayrollDialog({ open, onOpenChange }: DlgProps) {
+  const db = getDB();
+  const done = new Set(db.payroll.map((r) => r.month));
+  const prev = (() => { const d = new Date(Date.UTC(+db.today.slice(0, 4), +db.today.slice(5, 7) - 2, 1)); return d.toISOString().slice(0, 7); })();
+  const [month, setMonth] = useState(prev);
+  const { err, submit } = useSubmit("RunPayroll", () => onOpenChange(false));
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Run payroll</DialogTitle><DialogDescription>Posts salaries, withholding tax and EOBI to the ledger and pays the net from the payroll bank account.</DialogDescription></DialogHeader>
+        <Field label="Month" hint={done.has(month) ? "Already paid" : `${db.employees.filter((e) => e.joinDate <= `${month}-31`).length} employees`}><Input aria-label="Payroll month" type="month" max={prev} value={month} onChange={(e) => setMonth(e.target.value)} /></Field>
+        <ProblemBox p={err} />
+        <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => submit({ month })}>Post payroll</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

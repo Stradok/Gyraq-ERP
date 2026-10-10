@@ -1,4 +1,10 @@
 "use client";
+import { useState } from "react";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { RunPayrollDialog } from "@/components/app/forms";
+import { can } from "@/lib/rbac";
+import { useERP } from "@/lib/store";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { Kpi } from "@/components/app/kpi";
 import { Mono, StatusBadge } from "@/components/app/status";
@@ -9,11 +15,14 @@ import { money, moneyCompact, monthLabel } from "@/lib/format";
 
 export default function Payroll() {
   const db = getDB();
+  const role = useERP((s) => s.role);
+  const [open, setOpen] = useState(false);
   const runs = db.payroll;
   const last = runs[0]!;
   return (
     <>
-      <PageHeader module="employees" title="Employees" description="Monthly payroll runs post a balanced journal (salaries, withholding tax, EOBI) and a payment from the payroll bank account." />
+      <PageHeader module="employees" title="Employees" description="Monthly payroll runs post a balanced journal (salaries, withholding tax, EOBI) and a payment from the payroll bank account." actions={can(role, "hr.manage") && <Button size="sm" onClick={() => setOpen(true)}><Plus />Run payroll</Button>} />
+      <RunPayrollDialog open={open} onOpenChange={setOpen} />
       <Page>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4"><Kpi label={`Gross payroll · ${monthLabel(last.month)}`} value={moneyCompact(last.gross)} /><Kpi label="Net pay" value={moneyCompact(last.net)} /><Kpi label="Withholding tax" value={moneyCompact(last.tax)} /><Kpi label="Headcount" value={last.headcount} /></div>
         <Section title="Gross payroll by month"><Bars data={[...runs].reverse().map((r) => ({ month: r.month, gross: r.gross, net: r.net }))} xKey="month" xFmt={monthLabel} series={[{ key: "gross", label: "Gross" }, { key: "net", label: "Net", color: "var(--chart-3)" }]} /></Section>

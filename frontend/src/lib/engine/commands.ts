@@ -7,7 +7,7 @@ import { fail, setIdScope, type Ctx, type Result } from "./core";
 import { closePeriod, postManualJE, reopenPeriod, updateSettings } from "./finance";
 import { adjustStock, postCount, transferStock } from "./inventory";
 import { createCustomer, createLead, createProduct, createQuote, createSupplier, moveLead, releaseCreditHold, requestCreditHold, requestCreditLimit, setQuoteStatus } from "./masters";
-import { confirmBankMatch, createRule, queueMessage, setRule, submitExpense, submitLeave } from "./people";
+import { confirmBankMatch, createEmployee, createRule, runPayroll, updateEmployee, queueMessage, setRule, submitExpense, submitLeave } from "./people";
 import { createBill, createPO, paySupplier, receiveGoods, resolveBill } from "./purchasing";
 import { bounceCheque, cancelOrder, clearCheque, confirmOrder, createOrder, createReturn, depositCash, depositCheque, dispatchOrder, markDelivered, pickOrder, recordPayment, requestCreditOverride, setClaimStatus } from "./sales";
 
@@ -20,7 +20,7 @@ export const HANDLERS = {
   CreatePO: createPO, ReceiveGoods: receiveGoods, CreateBill: createBill, ResolveBill: resolveBill, PaySupplier: paySupplier,
   TransferStock: transferStock, AdjustStock: adjustStock, PostCount: postCount,
   PostManualJE: postManualJE, UpdateSettings: updateSettings, ClosePeriod: closePeriod, ReopenPeriod: reopenPeriod,
-  DecideApproval: decideApproval, SubmitExpense: submitExpense, SubmitLeave: submitLeave, ConfirmBankMatch: confirmBankMatch, SetRule: setRule, QueueMessage: queueMessage, CreateRule: createRule,
+  DecideApproval: decideApproval, SubmitExpense: submitExpense, SubmitLeave: submitLeave, CreateEmployee: createEmployee, UpdateEmployee: updateEmployee, RunPayroll: runPayroll, ConfirmBankMatch: confirmBankMatch, SetRule: setRule, QueueMessage: queueMessage, CreateRule: createRule,
 } as const;
 
 export type CommandType = keyof typeof HANDLERS;
