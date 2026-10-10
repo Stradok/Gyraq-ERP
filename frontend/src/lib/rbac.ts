@@ -51,3 +51,17 @@ const ACTIONS: Record<Action, Role[]> = {
   "hr.manage": ["owner", "admin", "finance"],
 };
 export const can = (r: Role, a: Action) => ACTIONS[a].includes(r);
+
+const MODULE_LABEL: Record<Module, string> = { overview: "Overview", sales: "Sales", customers: "Customers", inventory: "Inventory", warehouses: "Warehouses", purchasing: "Purchasing", suppliers: "Suppliers", finance: "Finance", expenses: "Expenses", employees: "Employees", reports: "Reports", ai: "AI Command Center", automations: "Automations", integrations: "Integrations", settings: "Settings", approvals: "Approvals" };
+const ACTION_LABEL: Record<Action, string> = { "warehouse.ops": "pick, dispatch and count stock", "po.receive": "receive goods", "master.create": "create customers, suppliers, products and leads", "stock.adjust": "adjust stock", "bill.create": "enter supplier bills", "supplier.pay": "pay suppliers", "return.create": "create returns", "approve.po": "approve purchase orders", "approve.finance": "approve finance items (journals, bill variances, adjustments)", "approve.credit": "approve credit limits and overrides", "approve.expense": "approve expenses", "ai.confirm": "confirm AI proposals", "po.create": "create purchase orders", "payment.record": "record customer payments", "order.create": "create sales orders", "period.close": "close accounting periods", "hr.manage": "add and edit employees and run payroll" };
+
+/** Plain-text access summary for the AI assistant. The owner is the top role and can do everything. */
+export function describeAccess(role: Role): string {
+  const mods = ROLE_MODULES[role].map((m) => MODULE_LABEL[m]);
+  const can_ = (Object.keys(ACTIONS) as Action[]).filter((a) => ACTIONS[a].includes(role)).map((a) => ACTION_LABEL[a]);
+  const cannot = (Object.keys(ACTIONS) as Action[]).filter((a) => !ACTIONS[a].includes(role)).map((a) => `${ACTION_LABEL[a]} (roles: ${ACTIONS[a].join(", ")})`);
+  const title = PERSONAS.find((p) => p.role === role)?.title ?? role;
+  if (role === "owner") return `Role: owner (${title}) — the top role. Has full access to every screen and can perform and approve every action.`;
+  return `Role: ${role} (${title}). Screens: ${mods.join(", ")}. Can: ${can_.join("; ") || "view only"}. Cannot (needs another role): ${cannot.join("; ") || "nothing"}. The owner and admin can do almost everything.`;
+}
+export function whoCan(action: Action): Role[] { return ACTIONS[action]; }

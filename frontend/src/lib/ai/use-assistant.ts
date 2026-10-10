@@ -22,7 +22,7 @@ export function useAssistant(user: { name: string; title: string }) {
   const topic = useRef<string | undefined>(undefined);
   const handled = useRef(new Set<string>());
   useEffect(() => { fetch(withBase("/api/ai/status")).then((r) => r.json()).then(setLlm).catch(() => setLlm({ enabled: false, model: "", provider: "" })); }, []);
-  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: () => ({ user, page: pathname, commands: useERP.getState().commands, anchor: useERP.getState().anchor }) }) });
+  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: () => ({ user, role: useERP.getState().role, page: pathname, commands: useERP.getState().commands, anchor: useERP.getState().anchor }) }) });
   const useLlm = !!llm?.enabled;
 
   const llmMsgs: VMsg[] = useMemo(() => chat.messages.map((m) => {
@@ -47,7 +47,7 @@ export function useAssistant(user: { name: string; title: string }) {
     const id = Date.now().toString();
     setMsgs((m) => [...m, { id: id + "u", role: "user", text: q, steps: [], results: [] }]);
     setBusy(true);
-    const a = answerLocal(q, topic.current);
+    const a = answerLocal(q, topic.current, useERP.getState().role);
     topic.current = a.topic;
     const base: VMsg = { id: id + "a", role: "assistant", text: "", steps: a.steps.map((s) => ({ name: s.tool, done: false })), results: [], computed: true, suggestions: a.suggestions, insufficient: a.status === "insufficient_data" };
     setMsgs((m) => [...m, base]);

@@ -5,6 +5,7 @@ import { aiEnabled, getModel } from "@/lib/ai/provider";
 import { TOOLS, runTool, type ToolName } from "@/lib/ai/tools";
 import { todayPK } from "@/lib/data/dates";
 import { inWorld, makeWorld } from "@/lib/engine/server-world";
+import type { Role } from "@/lib/rbac";
 import type { CommandRecord } from "@/lib/engine/commands";
 
 export const maxDuration = 60;
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
   if (!aiEnabled()) return Response.json({ error: "AI provider not configured" }, { status: 503 });
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
   if (limited(ip)) return Response.json({ error: "Too many requests. Please wait a moment." }, { status: 429 });
-  const body = (await req.json()) as { messages: UIMessage[]; user?: { name: string; title: string }; page?: string; commands?: CommandRecord[]; anchor?: string };
+  const body = (await req.json()) as { messages: UIMessage[]; user?: { name: string; title: string }; role?: Role; page?: string; commands?: CommandRecord[]; anchor?: string };
   const messages = body.messages.slice(-12);
   const world = makeWorld(body.commands, body.anchor);
   const tools = Object.fromEntries((Object.keys(TOOLS) as ToolName[]).map((name) => [name, tool({
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
   })]));
   const result = streamText({
     model: getModel(COMMAND_CENTER.tier),
-    system: COMMAND_CENTER.system(body.user ?? { name: "the user", title: "Manager" }, todayPK(), body.page),
+    system: COMMAND_CENTER.system(body.user ?? { name: "the user", title: "Manager" }, todayPK(), body.page, body.role),
     messages: await convertToModelMessages(messages),
     tools,
     stopWhen: stepCountIs(8),

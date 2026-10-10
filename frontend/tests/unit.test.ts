@@ -52,6 +52,10 @@ runOn(db, () => {
   assert.deepEqual(checkFigures("Revenue was Rs 999,999,999 in September.", [rev]).unverified, ["Rs 999,999,999"], "invented figure flagged");
   console.log("  ✓ grounding check passes true figures and flags invented ones");
 
+  assert.match(answerLocal("how do I create a sales order", undefined, "finance").text, /can.t do this[\s\S]*owner/, "finance told they can't create orders");
+  assert.doesNotMatch(answerLocal("how do I create a sales order", undefined, "owner").text, /can't do this/, "owner allowed");
+  console.log("  ✓ assistant respects role access");
+
   console.log("FBR mapper on seeded invoices");
   let bad = 0;
   for (const inv of db.invoices.slice(0, 300)) { const p = fbrPayload(db, inv); const failed = validateFbr(p, inv).filter((c) => !c.ok); if (failed.length) { bad++; if (bad < 3) console.log("   ", inv.number, failed.map((f) => f.label).join(" | ")); } }

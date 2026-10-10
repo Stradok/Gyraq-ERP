@@ -3,6 +3,8 @@
 import { interpret } from "../nl";
 import { addDays, resolvePeriod } from "../data/dates";
 import { getDB, pl, profitVariance, monthSeries } from "../data/queries";
+import { can, whoCan, type Role } from "../rbac";
+import { findGuide } from "./guide";
 import { runTool, type ToolName, type ToolResult } from "./tools";
 
 export interface Step { tool: ToolName; args: Record<string, unknown> }
@@ -13,7 +15,12 @@ const Mm = (n: number) => `Rs ${(n / 1e6).toFixed(2)}M`;
 
 export const INSUFFICIENT = "I don't have enough data to answer this reliably.";
 
-export function answerLocal(q: string, prevTopic?: string): LocalAnswer {
+const denied = (title: string, role?: Role) => {
+  const g = findGuide(title, 1)[0];
+  if (!role || !g?.needs || can(role, g.needs)) return "";
+  return `Your current role (${role.replace("_", " ")}) can't do this. ${whoCan(g.needs).join(", ").replace(/_/g, " ")} can; switch persona at the bottom of the sidebar to try it. `;
+};
+export function answerLocal(q: string, prevTopic?: string, role?: Role): LocalAnswer {
   const s = q.toLowerCase();
   const run = (steps: Step[]) => steps.map((st) => runTool(st.tool, st.args));
   const mk = (topic: string, steps: Step[], compose: (r: ToolResult[]) => string, suggestions?: string[]): LocalAnswer => { const results = run(steps); return { status: "answered", steps, results, text: compose(results), topic, suggestions }; };
@@ -93,7 +100,7 @@ export function answerLocal(q: string, prevTopic?: string): LocalAnswer {
 
   if (/^(how (do|can|to)|where|teach|explain how|what does|help me)/.test(s)) {
     const r = runTool("how_to", { topic: q });
-    if (r.ui.kind === "guide") return { status: "answered", steps: [{ tool: "how_to", args: { topic: q } }], results: [r], topic: "howto", text: `Here's how: ${r.ui.title.toLowerCase()}. Use “Take me there” to open the page.` };
+    if (r.ui.kind === "guide") return { status: "answered", steps: [{ tool: "how_to", args: { topic: q } }], results: [r], topic: "howto", text: `${denied(r.ui.title, role)}Here's how: ${r.ui.title.toLowerCase()}. Use “Take me there” to open the page.` };
   }
 
   const dr = s.match(/revenue.*?(?:from\s+)?(\d{4}-\d{2}-\d{2})\s+(?:to|until|-)\s+(\d{4}-\d{2}-\d{2})/);
