@@ -9,6 +9,12 @@ import { getDB } from "@/lib/data/sim";
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const EXTRA = ["/learn", "/settings/policies", "/settings/notifications", "/settings/roles", "/warehouses/receive", "/warehouses/pick", "/warehouses/count", "/sales/orders/new", "/sales/quotes/new", "/purchasing/orders/new", "/purchasing/bills/new", "/setup"];
 
+/** Saving ~50 pages is a lot of traffic: only on a fast, unmetered connection, and well after the app has loaded. */
+function goodConnection() {
+  const c = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  return !c || (!c.saveData && (!c.effectiveType || c.effectiveType === "4g"));
+}
+
 /** Fetch every page and the script/style files it names, so a hard navigation works with no connection. */
 async function saveForOffline() {
   const day = new Date().toISOString().slice(0, 10), key = "meridian-saved-" + day;
@@ -46,7 +52,7 @@ export function OfflineSupport() {
     const on = () => setBrowserOnline(true), off = () => setBrowserOnline(false);
     window.addEventListener("online", on); window.addEventListener("offline", off);
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
-      navigator.serviceWorker.register(`${BASE}/sw.js`).then(() => navigator.serviceWorker.ready).then(() => { if (navigator.onLine) setTimeout(() => void saveForOffline().then(() => new Promise((r) => setTimeout(r, 3000))).then(saveExamples), 2500); }).catch(() => undefined);
+      navigator.serviceWorker.register(`${BASE}/sw.js`).then(() => navigator.serviceWorker.ready).then(() => { if (navigator.onLine && goodConnection()) setTimeout(() => void saveForOffline().then(() => new Promise((r) => setTimeout(r, 3000))).then(saveExamples), 20_000); }).catch(() => undefined);
     }
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);

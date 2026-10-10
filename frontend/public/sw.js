@@ -36,13 +36,16 @@ async function cacheFirst(req) {
 
 async function networkFirst(req) {
   const c = await caches.open(V);
+  const cached = (await c.match(req)) || (await c.match(req, { ignoreSearch: true }));
+  const net = fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; });
+  net.catch(() => undefined); // a late failure after we already answered from the cache is not an error
   try {
-    const res = await Promise.race([fetch(req), new Promise((_, rej) => setTimeout(() => rej(new Error("slow")), 3000))]);
-    if (res.ok) c.put(req, res.clone());
-    return res;
+    // Nothing saved yet: wait for the network however long it takes. Only fall back to a saved copy when the network is
+    // slow (3 s) or down. Giving up on a slow but working connection would show "offline" to an online user.
+    if (!cached) return await net;
+    return await Promise.race([net, new Promise((_, rej) => setTimeout(() => rej(new Error("slow")), 3000))]);
   } catch {
-    const hit = (await c.match(req)) || (await c.match(req, { ignoreSearch: true }));
-    if (hit) return hit;
+    if (cached) return cached;
     if (req.mode === "navigate") {
       // A record page that was never opened (for example one created offline): reuse the saved page of the same kind.
       // The page reads its id from the address bar, so the saved shell works for any id.

@@ -1,7 +1,7 @@
 "use client";
 import { useMe } from "@/lib/me";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Check, GraduationCap, X } from "lucide-react";
 import { run } from "@/lib/engine/client";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,8 @@ export default function OverviewPage() {
   const k = useMemo(() => overviewKpis(), []);
   const months = useMemo(() => monthSeries(15), []);
   const brief = useMemo(() => aiBrief(), []);
-  const all = useMemo(() => insights(), []);
+  const [all, setAll] = useState<ReturnType<typeof insights>>([]);
+  useEffect(() => { const t = setTimeout(() => setAll(insights()), 60); return () => clearTimeout(t); }, []); // the slowest query; the rest of the page shows first
   const aging = useMemo(() => arAging(), []);
   const cp = useMemo(() => cashProjection(ov.newlyApproved), [ov.newlyApproved]);
   const showFinance = role === "owner" || role === "admin" || role === "finance";

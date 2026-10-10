@@ -3,8 +3,10 @@ import type { ISODate } from "./types";
 
 const DAY = 86_400_000;
 
-export const parseISO = (d: ISODate) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
-export const toISO = (ms: number): ISODate => new Date(ms).toISOString().slice(0, 10);
+// The seed calls these hundreds of thousands of times on the same few hundred dates; caching them cut data build time by about a tenth.
+const parsed = new Map<string, number>(), printed = new Map<number, string>();
+export const parseISO = (d: ISODate) => { let v = parsed.get(d); if (v === undefined) { v = Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)); parsed.set(d, v); } return v; };
+export const toISO = (ms: number): ISODate => { let v = printed.get(ms); if (v === undefined) { v = new Date(ms).toISOString().slice(0, 10); if (printed.size < 5000) printed.set(ms, v); } return v; };
 export const addDays = (d: ISODate, n: number): ISODate => toISO(parseISO(d) + n * DAY);
 export const diffDays = (a: ISODate, b: ISODate) => Math.round((parseISO(a) - parseISO(b)) / DAY);
 export const weekday = (d: ISODate) => new Date(parseISO(d)).getUTCDay(); // 0 = Sunday

@@ -120,7 +120,7 @@ function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function AppShellInner({ children }: { children: React.ReactNode }) {
   const { role, setRole, collapsed, visit, reset } = useERP();
   const mounted = useMounted();
   const pathname = usePathname();
@@ -241,4 +241,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <AssistantDock />
     </div>
   );
+}
+
+/** What the visitor sees while the app builds its data in the browser. It is plain HTML, so the page paints at once. */
+function ShellSkeleton() {
+  return (
+    <div className="flex h-dvh bg-background" aria-busy="true" aria-label="Loading">
+      <aside className="hidden w-60 shrink-0 space-y-2 border-r p-4 md:block"><div className="mb-4 h-8 w-32 rounded bg-muted" />{Array.from({ length: 9 }, (_, i) => <div key={i} className="h-7 rounded bg-muted/60" />)}</aside>
+      <div className="flex min-w-0 flex-1 flex-col"><div className="h-12 border-b" /><div className="space-y-4 p-6"><div className="h-7 w-48 rounded bg-muted" /><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <div key={i} className="h-20 rounded-lg bg-muted/60" />)}</div><div className="h-64 rounded-lg bg-muted/40" /></div></div>
+    </div>
+  );
+}
+
+/** Nothing here depends on today's date or on data, so the server sends this static shell from the CDN and the browser does the rest. */
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const [go, setGo] = useState(false);
+  useEffect(() => { const r = requestAnimationFrame(() => setTimeout(() => setGo(true), 0)); return () => cancelAnimationFrame(r); }, []); // let the skeleton paint before the heavy work starts
+  return go ? <AppShellInner>{children}</AppShellInner> : <ShellSkeleton />;
 }
