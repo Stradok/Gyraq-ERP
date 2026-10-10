@@ -13,7 +13,7 @@ function docs(db: DB): Map<string, Map<string, { json: string; h: string }>> {
   const out = new Map<string, Map<string, { json: string; h: string }>>();
   const add = (kind: string, id: string, v: unknown) => { const json = JSON.stringify(v); (out.get(kind) ?? out.set(kind, new Map()).get(kind)!).set(id, { json, h: digest(json) }); };
   for (const k of COLLECTIONS) for (const d of db[k] as unknown as Doc[]) add(k, keyOf(d), d);
-  add("settings", "main", db.settings); add("periodStatus", "main", db.periodStatus);
+  add("settings", "main", db.settings); add("company", "main", db.company); add("periodStatus", "main", db.periodStatus);
   return out;
 }
 

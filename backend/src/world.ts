@@ -1,10 +1,12 @@
 // The authoritative business state. Booted from the seed (pinned to a stored anchor date) plus every command in Postgres.
 import { pool } from "./db";
 import { Projector } from "./project";
-import { buildDB, execute, replay, runOn, setWorldResolver, todayPK, type CommandRecord, type CommandType, type DB, type Role } from "./engine";
+import { config } from "./config";
+import { buildDB, buildEmptyDB, execute, replay, runOn, setWorldResolver, todayPK, type CommandRecord, type CommandType, type DB, type Role } from "./engine";
 import type { Problem } from "../../frontend/src/lib/engine/core";
 
 export let world: DB;
+export let mode: "demo" | "empty" = "demo";
 const projector = new Projector();
 setWorldResolver(() => world);
 
@@ -20,7 +22,10 @@ export async function boot() {
   let anchor = (await pool.query("select value from meta where key='anchor'")).rows[0]?.value as string | undefined;
   const fresh = !anchor;
   if (!anchor) { anchor = todayPK(); await pool.query("insert into meta(key,value) values ('anchor',$1)", [anchor]); }
-  world = buildDB(anchor);
+  const stored = (await pool.query("select value from meta where key='mode'")).rows[0]?.value as string | undefined;
+  mode = stored === "empty" || stored === "demo" ? stored : config.companyMode;
+  if (!stored) await pool.query("insert into meta(key,value) values ('mode',$1)", [mode]);
+  world = mode === "empty" ? buildEmptyDB(anchor) : buildDB(anchor);
   const log = await commandsSince(0);
   const r = replay(world, log);
   if (r.skipped) console.warn(`replay: ${r.skipped} stored commands were rejected on replay (code changed since they ran?)`);

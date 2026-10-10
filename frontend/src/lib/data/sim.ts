@@ -7,7 +7,7 @@ import {
 import { addDays, addMonths, diffDays, endOfMonth, monthKey, startOfMonth, todayPK, weekday } from "./dates";
 import type {
   Account, Approval, AuditEvent, BankTxn, CategoryId, CreditNote, Customer, CustomerPayment, DocLine, Employee, Expense,
-  GoodsReceipt, ISODate, Invoice, JournalEntry, JournalLine, Lead, LeaveRequest, MatchException, Notification, PayrollRun,
+  Company, GoodsReceipt, ISODate, Invoice, JournalEntry, JournalLine, Lead, LeaveRequest, MatchException, Notification, PayrollRun,
   Product, PurchaseOrder, Quote, SalesOrder, StockCount, Supplier, SupplierBill, SupplierPayment, Warehouse,
   AutomationRule, OutboxMsg, PrincipalClaim, Settings, Shipment, StockTransfer,
 } from "./types";
@@ -61,6 +61,7 @@ export interface DB {
   rules: AutomationRule[];
   outbox: OutboxMsg[];
   settings: Settings;
+  company: Company;
   periodStatus: Record<string, "closed" | "soft_closed" | "open">; // overrides computed fiscal-period status
   stock: Map<string, Cell>; // key `${productId}|${warehouseId}`
   calendar: ForecastEvent[];
@@ -127,6 +128,27 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const pad = (n: number, w: number) => String(n).padStart(w, "0");
 
 /** `anchor` pins the seed's "today" (the backend stores it so its data stays put between restarts). */
+export const DEFAULT_SETTINGS: Settings = { poOwnerLimit: 1_000_000, adjustApprovalLimit: 50_000, jeApprovalLimit: 500_000, expenseFinanceLimit: 25_000, maxOverdueDays: 30, minCash: ORG.minCash, furtherTaxRate: 0.04, wht236hAtl: 0.005, wht236hNonAtlRetail: 0.025, wht236hNonAtlOther: 0.01 };
+const CALENDAR: ForecastEvent[] = [
+  { name: "Ramadan 2026", kind: "ramadan", start: "2026-02-18", end: "2026-03-19" },
+  { name: "Eid ul-Fitr 2026", kind: "eid", start: "2026-03-20", end: "2026-03-23" },
+  { name: "Eid ul-Adha 2026", kind: "eid", start: "2026-05-27", end: "2026-05-30" },
+  { name: "Summer peak", kind: "season", start: "2026-05-01", end: "2026-08-31" },
+  { name: "Ramadan 2027", kind: "ramadan", start: "2027-02-08", end: "2027-03-09" },
+];
+
+/** A company with no business data yet: the chart of accounts, policies and an unconfigured profile. Real customers start here. */
+export function buildEmptyDB(anchor?: ISODate): DB {
+  const today = anchor ?? todayPK();
+  return {
+    today, start: today, warehouses: [], suppliers: [], products: [], customers: [], employees: [], quotes: [], orders: [], invoices: [], creditNotes: [], payments: [], pos: [], grns: [], bills: [], supplierPayments: [], stockCounts: [], expenses: [], leaves: [], payroll: [],
+    accounts: ACCOUNTS, journal: [], bank: [], approvals: [], audit: [], notifications: [], leads: [], shipments: [], transfers: [], claims: [], rules: [], outbox: [],
+    settings: { ...DEFAULT_SETTINGS }, company: { name: "Your company", legalName: "", ntn: "", strn: "", address: "", city: "", province: "", setupDone: false }, periodStatus: {},
+    stock: new Map(), calendar: CALENDAR.map((e) => ({ ...e })), bankBalanceAccounts: ["1100", "1110", "1120", "1130", "1010"],
+    scenario: { khanId: "", alNoorId: "", cityId: "", indusBillId: "", dupBillId: "", lowStock: [], lhePcLocation: "" },
+  };
+}
+
 export function buildDB(anchor?: ISODate): DB {
   const today = anchor ?? todayPK();
   const start = addMonths(today, -HIST_MONTHS);
@@ -952,7 +974,8 @@ export function buildDB(anchor?: ISODate): DB {
   return {
     today, start, warehouses, suppliers, products, customers, employees, quotes, orders, invoices, creditNotes, payments, pos, grns, bills, supplierPayments, stockCounts, expenses, leaves, payroll,
     shipments: [], transfers: [], claims: [], outbox: [], periodStatus: {},
-    settings: { poOwnerLimit: 1_000_000, adjustApprovalLimit: 50_000, jeApprovalLimit: 500_000, expenseFinanceLimit: 25_000, maxOverdueDays: 30, minCash: ORG.minCash, furtherTaxRate: 0.04, wht236hAtl: 0.005, wht236hNonAtlRetail: 0.025, wht236hNonAtlOther: 0.01 },
+    settings: { ...DEFAULT_SETTINGS },
+    company: { name: ORG.name, legalName: ORG.legalName, ntn: ORG.ntn, strn: ORG.strn, address: ORG.address, city: "Karachi", province: "Sindh", setupDone: true },
     rules: [
       { id: "WF-001", name: "Large invoice approval", event: "invoice.posted", fact: "invoice.total", op: "gt", value: 500_000, action: "notify", target: "finance", enabled: true, runs: 41 },
       { id: "WF-002", name: "Low stock recommendation", event: "stock.low", fact: "available", op: "any", value: 0, action: "create_recommendation", target: "procurement", enabled: true, runs: 128 },
@@ -966,7 +989,8 @@ export function buildDB(anchor?: ISODate): DB {
 let base: DB | null = null;
 let anchorOverride: ISODate | null = null;
 /** Remote mode: the seed is pinned to the date the server stored, not to today. */
-export function setAnchor(a: ISODate) { if (anchorOverride !== a) { anchorOverride = a; base = null; } }
+let modeOverride: "demo" | "empty" = "demo";
+export function setAnchor(a: ISODate, mode: "demo" | "empty" = "demo") { if (anchorOverride !== a || modeOverride !== mode) { anchorOverride = a; modeOverride = mode; base = null; } }
 let resolver: (() => DB | undefined) | null = null;
 /** Server routes register a resolver so getDB() returns the request's own world (base + replayed commands). */
 export function setWorldResolver(fn: () => DB | undefined) { resolver = fn; }
@@ -977,7 +1001,7 @@ export function getDB(): DB {
   if (override) return override;
   const w = resolver?.();
   if (w) return w;
-  if (!base || base.today !== (anchorOverride ?? todayPK())) base = buildDB(anchorOverride ?? undefined);
+  if (!base || base.today !== (anchorOverride ?? todayPK())) base = modeOverride === "empty" ? buildEmptyDB(anchorOverride ?? undefined) : buildDB(anchorOverride ?? undefined);
   return base;
 }
 void ORG; void endOfMonth; void startOfMonth;

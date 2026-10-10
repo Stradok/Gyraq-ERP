@@ -6,7 +6,7 @@ import { hashPassword, issue, throttled, verify, verifyPassword, type Session } 
 import { config } from "./config";
 import { migrate, pool } from "./db";
 import { HANDLERS, PERSONAS, can, type Action, type CommandType } from "./engine";
-import { boot, commandsSince, submit, world } from "./world";
+import { boot, commandsSince, mode, submit, world } from "./world";
 
 // Which permission each command needs. The engine also validates its own rules; this is the role boundary the browser UI only hints at.
 const NEEDS: Partial<Record<CommandType, Action>> = {
@@ -61,8 +61,7 @@ app.post("/api/users", async (c) => {
   if (!b.role || !ROLES.includes(b.role)) return c.json({ error: "Pick a role." }, 400);
   if (b.role === "owner" && c.get("session").role !== "owner") return c.json({ error: "Only an Owner can create another Owner." }, 403);
   if ((b.password ?? "").length < 8) return c.json({ error: "Password must be at least 8 characters." }, 400);
-  const emp = b.emp ?? name;
-  if (!world.employees.some((e) => e.name === emp)) return c.json({ error: `No employee named "${emp}". Add them under Employees first, then link the user to that employee.` }, 400);
+  const emp = b.emp || name; // the employee record this person acts as (leave, expenses); may be added later
   if ((await pool.query("select 1 from users where lower(email)=$1", [email])).rowCount) return c.json({ error: "A user with this email already exists." }, 409);
   const r = await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6) returning id", [email, name, b.title ?? "", b.role, emp, hashPassword(b.password!)]);
   return c.json({ ok: true, id: r.rows[0].id });
@@ -84,7 +83,7 @@ app.patch("/api/users/:id", async (c) => {
 });
 
 /** Everything a browser needs to rebuild the shared state: the seed anchor and every command so far. */
-app.get("/api/bootstrap", async (c) => c.json({ anchor: world.today, commands: await commandsSince(0), session: c.get("session") }));
+app.get("/api/bootstrap", async (c) => c.json({ anchor: world.today, mode, commands: await commandsSince(0), session: c.get("session") }));
 app.get("/api/commands", async (c) => c.json({ commands: await commandsSince(Number(c.req.query("since") ?? 0)) }));
 
 app.post("/api/commands", async (c) => {
@@ -104,13 +103,18 @@ app.onError((e, c) => { console.error(e); return c.json({ ok: false, error: { co
 
 async function seedUsers() {
   if ((await pool.query("select count(*)::int as n from users")).rows[0].n > 0) return;
+  if (mode === "empty") {
+    if (!config.ownerEmail || config.ownerPassword.length < 8) throw new Error("COMPANY_MODE=empty needs OWNER_EMAIL and an OWNER_PASSWORD of at least 8 characters.");
+    await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,'Owner','owner',$2,$3)", [config.ownerEmail.toLowerCase(), config.ownerName, hashPassword(config.ownerPassword)]);
+    console.log(`created the Owner account ${config.ownerEmail}`); return;
+  }
   const pw = hashPassword(config.demoPassword);
   for (const p of PERSONAS) await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6)", [p.email, p.name, p.title, p.role, p.empName, pw]);
   console.log(`created ${PERSONAS.length} demo users (password from DEMO_PASSWORD)`);
 }
 
 export async function start() {
-  await migrate(); await seedUsers(); await boot();
+  await migrate(); await boot(); await seedUsers();
   const srv = serve({ fetch: app.fetch, port: config.port });
   console.log(`API listening on :${config.port}`);
   return srv;

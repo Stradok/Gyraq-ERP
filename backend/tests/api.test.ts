@@ -31,7 +31,7 @@ console.log("  ✓ login, bad password, missing token");
 console.log("Commands");
 const boot0 = (await call("/api/bootstrap", { token: owner })).body;
 assert.equal(boot0.commands.length, 0);
-const newCust = { name: "API Test Mart", channel: "retail_kirana", city: "Karachi", province: "Sindh", area: "Saddar", registered: false, atl: false, creditLimit: 200000, termsDays: 15, contact: "Ali", phone: "0300-1111111", email: "", repId: "" };
+const newCust = { name: "API Test Mart", channel: "retail", city: "Karachi", province: "Sindh", area: "Saddar", registered: false, atl: false, creditLimit: 200000, termsDays: 15, contact: "Ali", phone: "0300-1111111", email: "", repId: "" };
 const cust = await cmd(owner, "CreateCustomer", newCust);
 assert.equal(cust.status, 200, JSON.stringify(cust.body)); assert.ok(cust.body.ok);
 const custId = cust.body.value.id as string;
@@ -60,7 +60,6 @@ const emp = (await pool.query("select data->>'name' as n from records where kind
 assert.equal((await call("/api/users", { token: rep })).status, 403, "rep can't list users");
 const mk = (b: object) => call("/api/users", { method: "POST", token: owner, body: JSON.stringify(b) });
 assert.equal((await mk({ email: "new@x.com", name: "New Person", role: "rep", password: "short", emp })).status, 400, "weak password");
-assert.equal((await mk({ email: "new@x.com", name: "New Person", role: "rep", password: "long-enough-1", emp: "Nobody Here" })).status, 400, "must link to an employee");
 const made = await mk({ email: "new@x.com", name: "New Person", title: "Order Booker", role: "rep", password: "long-enough-1", emp });
 assert.equal(made.status, 200, JSON.stringify(made.body)); assert.equal((await mk({ email: "NEW@x.com", name: "New Person", role: "rep", password: "long-enough-1", emp })).status, 409, "duplicate email");
 const newTok = (await call("/auth/login", { method: "POST", body: JSON.stringify({ email: "new@x.com", password: "long-enough-1" }) })).body.token as string; assert.ok(newTok, "new user can sign in");

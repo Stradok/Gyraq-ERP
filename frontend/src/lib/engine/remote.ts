@@ -37,8 +37,8 @@ export async function loadRemoteWorld(): Promise<boolean> {
   const r = await fetch(`${API}/api/bootstrap`, { headers: auth() }).catch(() => null);
   if (!r) { toast.error("Can't reach the server"); return true; }
   if (r.status === 401) return false;
-  const b = (await r.json()) as { anchor: string; commands: Stored[]; session: { role: Role } };
-  setAnchor(b.anchor);
+  const b = (await r.json()) as { anchor: string; mode?: "demo" | "empty"; commands: Stored[]; session: { role: Role } };
+  setAnchor(b.anchor, b.mode ?? "demo");
   const db = getDB();
   state.applied = new Set(); state.lastSeq = 0;
   replay(db, b.commands);

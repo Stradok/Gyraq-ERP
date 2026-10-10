@@ -30,7 +30,7 @@ export const ROLE_MODULES: Record<Role, Module[]> = {
 };
 export const canSee = (r: Role, m: Module) => ROLE_MODULES[r].includes(m);
 
-export type Action = "warehouse.ops" | "po.receive" | "master.create" | "stock.adjust" | "bill.create" | "supplier.pay" | "return.create" | "approve.po" | "approve.finance" | "approve.credit" | "approve.expense" | "ai.confirm" | "po.create" | "payment.record" | "order.create" | "period.close" | "hr.manage";
+export type Action = "warehouse.ops" | "po.receive" | "master.create" | "stock.adjust" | "bill.create" | "supplier.pay" | "return.create" | "approve.po" | "approve.finance" | "approve.credit" | "approve.expense" | "ai.confirm" | "po.create" | "payment.record" | "order.create" | "period.close" | "hr.manage" | "setup.manage";
 const ACTIONS: Record<Action, Role[]> = {
   "warehouse.ops": ["owner", "admin", "warehouse", "sales_manager"],
   "po.receive": ["owner", "admin", "warehouse", "procurement"],
@@ -49,11 +49,12 @@ const ACTIONS: Record<Action, Role[]> = {
   "order.create": ["owner", "admin", "sales_manager", "rep"],
   "period.close": ["owner", "finance"],
   "hr.manage": ["owner", "admin", "finance"],
+  "setup.manage": ["owner", "admin"],
 };
 export const can = (r: Role, a: Action) => ACTIONS[a].includes(r);
 
 const MODULE_LABEL: Record<Module, string> = { overview: "Overview", sales: "Sales", customers: "Customers", inventory: "Inventory", warehouses: "Warehouses", purchasing: "Purchasing", suppliers: "Suppliers", finance: "Finance", expenses: "Expenses", employees: "Employees", reports: "Reports", ai: "AI Command Center", automations: "Automations", integrations: "Integrations", settings: "Settings", approvals: "Approvals" };
-const ACTION_LABEL: Record<Action, string> = { "warehouse.ops": "pick, dispatch and count stock", "po.receive": "receive goods", "master.create": "create customers, suppliers, products and leads", "stock.adjust": "adjust stock", "bill.create": "enter supplier bills", "supplier.pay": "pay suppliers", "return.create": "create returns", "approve.po": "approve purchase orders", "approve.finance": "approve finance items (journals, bill variances, adjustments)", "approve.credit": "approve credit limits and overrides", "approve.expense": "approve expenses", "ai.confirm": "confirm AI proposals", "po.create": "create purchase orders", "payment.record": "record customer payments", "order.create": "create sales orders", "period.close": "close accounting periods", "hr.manage": "add and edit employees and run payroll" };
+const ACTION_LABEL: Record<Action, string> = { "warehouse.ops": "pick, dispatch and count stock", "po.receive": "receive goods", "master.create": "create customers, suppliers, products and leads", "stock.adjust": "adjust stock", "bill.create": "enter supplier bills", "supplier.pay": "pay suppliers", "return.create": "create returns", "approve.po": "approve purchase orders", "approve.finance": "approve finance items (journals, bill variances, adjustments)", "approve.credit": "approve credit limits and overrides", "approve.expense": "approve expenses", "ai.confirm": "confirm AI proposals", "po.create": "create purchase orders", "payment.record": "record customer payments", "order.create": "create sales orders", "period.close": "close accounting periods", "hr.manage": "add and edit employees and run payroll", "setup.manage": "set up the company, warehouses and opening balances" };
 
 /** Plain-text access summary for the AI assistant. The owner is the top role and can do everything. */
 export function describeAccess(role: Role): string {

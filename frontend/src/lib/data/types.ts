@@ -490,3 +490,5 @@ export interface Settings {
 }
 
 export interface OutboxMsg { id: string; at: string; channel: "WhatsApp" | "Email" | "FBR"; to: string; subject: string; body: string; status: "simulated" }
+
+export interface Company { name: string; legalName: string; ntn: string; strn: string; address: string; city: string; province: string; setupDone: boolean }

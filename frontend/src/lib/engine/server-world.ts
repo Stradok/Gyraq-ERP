@@ -2,7 +2,7 @@
 // answers about what the user has actually done in this session. A real backend reads one shared database instead.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { todayPK } from "../data/dates";
-import { buildDB, setWorldResolver, type DB } from "../data/sim";
+import { buildDB, buildEmptyDB, setWorldResolver, type DB } from "../data/sim";
 import { replay, type CommandRecord } from "./commands";
 
 const als = new AsyncLocalStorage<DB>();
@@ -23,8 +23,8 @@ export async function makeRemoteWorld(token: string | undefined): Promise<DB | u
   if (!api || !token) return undefined;
   const r = await fetch(`${api}/api/bootstrap`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
   if (!r?.ok) return undefined;
-  const b = (await r.json()) as { anchor: string; commands: CommandRecord[] };
-  const db = buildDB(b.anchor);
+  const b = (await r.json()) as { anchor: string; mode?: string; commands: CommandRecord[] };
+  const db = b.mode === "empty" ? buildEmptyDB(b.anchor) : buildDB(b.anchor);
   replay(db, b.commands);
   return db;
 }

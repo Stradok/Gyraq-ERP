@@ -8,7 +8,7 @@ const WH_BY_CITY: Record<string, string> = { Karachi: "KHI-DC1", Hyderabad: "KHI
 const NTN = /^\d{7}-\d$/;
 const CNIC = /^\d{5}-\d{7}-\d$/;
 
-export interface CreateCustomer { name: string; channel: Channel; city: string; province: string; area: string; registered: boolean; ntn?: string; strn?: string; cnic?: string; atl: boolean; creditLimit: number; termsDays: number; contact: string; phone: string; email: string; repId: string }
+export interface CreateCustomer { name: string; channel: Channel; city: string; province: string; area: string; registered: boolean; ntn?: string; strn?: string; cnic?: string; atl: boolean; creditLimit: number; termsDays: number; contact: string; phone: string; email: string; repId: string; warehouseId?: string }
 export function createCustomer(ctx: Ctx, p: CreateCustomer): Result<{ id: string }> {
   const db = ctx.db;
   if (p.name.trim().length < 3) return fail("VAL_NAME", "Enter the customer's name", "Names need at least 3 characters.", "Type the trading name.");
@@ -16,11 +16,13 @@ export function createCustomer(ctx: Ctx, p: CreateCustomer): Result<{ id: string
   if (p.registered && !NTN.test(p.ntn ?? "")) return fail("VAL_NTN", "NTN format looks wrong", "A registered business needs an NTN like 1234567-8.", "Check the NTN on the registration certificate.");
   if (!p.registered && p.cnic && !CNIC.test(p.cnic)) return fail("VAL_CNIC", "CNIC format looks wrong", "Use the format 42101-1234567-1.", "Check the CNIC and try again.");
   if (!(p.creditLimit >= 0) || p.creditLimit > 50_000_000) return fail("VAL_LIMIT", "Credit limit is out of range", "Enter an amount between 0 and Rs 50,000,000.", "New customers usually start under Rs 1,000,000.");
+  const whId = p.warehouseId ?? db.warehouses.find((w) => w.id === `wh_${WH_BY_CITY[p.city]}`)?.id ?? db.warehouses.find((w) => w.city === p.city)?.id ?? db.warehouses[0]?.id;
+  if (!whId || !db.warehouses.some((w) => w.id === whId)) return fail("WH_NONE", "Create a warehouse first", "Every customer is served from a warehouse.", "Add one under Getting started.");
   const id = newId("cus");
   const c: Customer = {
     id, code: nextNo("CUS-", db.customers.map((x) => ({ number: x.code })), 0).replace(/(\d+)$/, (m) => pad(+m, 4)), name: p.name.trim(), channel: p.channel, city: p.city, province: p.province, area: p.area,
     ntn: p.registered ? p.ntn ?? null : null, strn: p.registered ? p.strn || null : null, cnic: p.registered ? null : p.cnic || null, registered: p.registered, atl: p.atl, creditLimit: p.creditLimit, termsDays: p.termsDays,
-    repId: p.repId, warehouseId: `wh_${WH_BY_CITY[p.city] ?? "KHI-DC1"}`, status: "active", profile: "normal", contact: p.contact, phone: p.phone, email: p.email, since: ctx.date, size: 0.3,
+    repId: p.repId, warehouseId: whId, status: "active", profile: "normal", contact: p.contact, phone: p.phone, email: p.email, since: ctx.date, size: 0.3,
   };
   db.customers.push(c);
   audit(ctx, "customer.created", "Customer", c.code, `${c.name} · limit ${money(c.creditLimit)}`);
