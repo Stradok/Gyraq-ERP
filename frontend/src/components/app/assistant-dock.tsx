@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { ArrowUp, Check, Loader2, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AiChip } from "./ai";
+import { BookSlot } from "./book-slot";
 import { Md, ToolResultView } from "./ai-results";
 import { checkFigures } from "@/lib/ai/grounding";
 import { useAssistant } from "@/lib/ai/use-assistant";
@@ -55,6 +56,7 @@ export function AssistantDock() {
             {error && <p className="rounded-md border border-danger/40 bg-danger/5 p-2 text-xs text-danger">The AI service didn&apos;t respond ({error.message.slice(0, 80)}). Try again in a moment.</p>}
             <div ref={end} />
           </div>
+          {llm && !useLlm && <BookSlot what="The live AI assistant" className="mx-2.5 mb-1" />}
           <form onSubmit={(e) => { e.preventDefault(); submit(input); }} className="border-t p-2.5">
             <div className={cn("flex items-center gap-2 rounded-lg border bg-card p-1 focus-within:border-primary/50")}>
               <input autoFocus value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask or tell me what to do…" className="h-8 flex-1 bg-transparent px-2 text-[13px] outline-none placeholder:text-muted-foreground" />

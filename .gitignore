@@ -4,3 +4,4 @@ node_modules
 !.env.example
 planpack.zip
 .DS_Store
+supabase.md

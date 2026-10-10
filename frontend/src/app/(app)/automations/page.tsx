@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { BookSlot } from "@/components/app/book-slot";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { Field, ProblemBox } from "@/components/app/forms";
 import { Mono } from "@/components/app/status";
@@ -71,6 +72,7 @@ export default function Automations() {
       <PageHeader title="Automations" description="WHEN a business event happens, IF a condition holds, THEN run a safe action. Rules never change financial records directly." actions={canEdit && <Button size="sm" onClick={() => setOpen(true)}><Plus />New rule</Button>} />
       <RuleDialog key={String(open)} open={open} onOpenChange={setOpen} />
       <Page>
+        <BookSlot what="Autonomous agents" />
         <div className="space-y-3">{rules.map((r) => { const ev = EVENTS[r.event]; return (
           <Section key={r.id} title={<span className="flex items-center gap-2">{r.name}<Mono className="text-muted-foreground">{r.id}</Mono></span>} actions={<Switch aria-label={`Enable ${r.name}`} disabled={!canEdit} checked={r.enabled} onCheckedChange={(v) => run("SetRule", { id: r.id, enabled: v })} />}>
             <div className="grid gap-3 text-[13px] md:grid-cols-[1fr_1fr_1fr]">
