@@ -36,13 +36,20 @@ export async function boot() {
 let chain: Promise<unknown> = Promise.resolve();
 const serial = <T>(fn: () => Promise<T>): Promise<T> => { const p = chain.then(fn, fn); chain = p.catch(() => undefined); return p; };
 
-export type Outcome = { ok: true; rec: CommandRecord & { seq: number }; value: unknown; message?: string } | { ok: false; error: Problem };
+export type Outcome = { ok: true; rec: CommandRecord & { seq: number }; value: unknown; message?: string } | { ok: false; error: Problem; status?: number };
+export interface ClientStamp { id?: string; at?: string; baseSeq?: number }
 
 /** Run one command: execute on the live state, then persist it and its effects atomically. */
-export function submit(actor: { name: string; role: Role }, type: CommandType, payload: unknown, source: "user" | "ai_proposal"): Promise<Outcome> {
+export function submit(actor: { name: string; role: Role }, type: CommandType, payload: unknown, source: "user" | "ai_proposal", stamp: ClientStamp = {}): Promise<Outcome> {
   return serial(async () => {
+    // The browser already ran this command on its own copy using the same engine; it sends its command id and time so both
+    // copies produce identical ids. It also says how much of the log it had seen: if others wrote since, it must resync first.
+    const head = Number((await pool.query("select coalesce(max(seq),0) as n from commands")).rows[0].n);
+    if (stamp.baseSeq !== undefined && stamp.baseSeq < head) return { ok: false, status: 409, error: { code: "STALE", title: "Someone else changed the data", detail: "Your screen was behind the latest changes.", recovery: "Your view has been refreshed. Please try again." } } as Outcome;
+    if (stamp.id && (await pool.query("select 1 from commands where id=$1", [stamp.id])).rowCount) return { ok: false, status: 409, error: { code: "DUPLICATE_COMMAND", title: "Already applied", detail: "This action was already saved.", recovery: "Nothing to do." } } as Outcome;
     const seq = Number((await pool.query("select nextval('command_seq') as n")).rows[0].n);
-    const rec = { id: `s${seq}`, type, payload, at: new Date().toISOString(), date: world.today, actor: actor.name, role: actor.role, source } satisfies CommandRecord;
+    const at = stamp.at && Math.abs(Date.parse(stamp.at) - Date.now()) < 86_400_000 ? new Date(stamp.at).toISOString() : new Date().toISOString();
+    const rec = { id: stamp.id ?? `s${seq}`, type, payload, at, date: world.today, actor: actor.name, role: actor.role, source } satisfies CommandRecord;
     const res = execute(world, rec);
     if (!res.ok) return { ok: false, error: res.error } as Outcome;
     const c = await pool.connect();

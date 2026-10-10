@@ -964,6 +964,9 @@ export function buildDB(anchor?: ISODate): DB {
 }
 
 let base: DB | null = null;
+let anchorOverride: ISODate | null = null;
+/** Remote mode: the seed is pinned to the date the server stored, not to today. */
+export function setAnchor(a: ISODate) { if (anchorOverride !== a) { anchorOverride = a; base = null; } }
 let resolver: (() => DB | undefined) | null = null;
 /** Server routes register a resolver so getDB() returns the request's own world (base + replayed commands). */
 export function setWorldResolver(fn: () => DB | undefined) { resolver = fn; }
@@ -974,7 +977,7 @@ export function getDB(): DB {
   if (override) return override;
   const w = resolver?.();
   if (w) return w;
-  if (!base || base.today !== todayPK()) base = buildDB();
+  if (!base || base.today !== (anchorOverride ?? todayPK())) base = buildDB(anchorOverride ?? undefined);
   return base;
 }
 void ORG; void endOfMonth; void startOfMonth;

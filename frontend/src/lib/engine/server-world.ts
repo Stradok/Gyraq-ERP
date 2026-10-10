@@ -16,3 +16,15 @@ export function makeWorld(commands: CommandRecord[] | undefined, anchor: string 
   return db;
 }
 export function inWorld<T>(db: DB | undefined, fn: () => T): T { return db ? als.run(db, fn) : fn(); }
+
+/** Remote mode: build the world from the backend's log (the caller's own session decides what they may read). */
+export async function makeRemoteWorld(token: string | undefined): Promise<DB | undefined> {
+  const api = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!api || !token) return undefined;
+  const r = await fetch(`${api}/api/bootstrap`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
+  if (!r?.ok) return undefined;
+  const b = (await r.json()) as { anchor: string; commands: CommandRecord[] };
+  const db = buildDB(b.anchor);
+  replay(db, b.commands);
+  return db;
+}

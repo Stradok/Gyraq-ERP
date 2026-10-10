@@ -47,14 +47,15 @@ app.get("/api/commands", async (c) => c.json({ commands: await commandsSince(Num
 
 app.post("/api/commands", async (c) => {
   const s = c.get("session");
-  const b = await c.req.json<{ type?: string; payload?: unknown; source?: "user" | "ai_proposal" }>().catch(() => ({} as { type?: string; payload?: unknown; source?: "user" | "ai_proposal" }));
+  const b = await c.req.json<{ type?: string; payload?: unknown; source?: "user" | "ai_proposal"; id?: string; at?: string; baseSeq?: number }>().catch(() => ({} as { type?: string; payload?: unknown; source?: "user" | "ai_proposal"; id?: string; at?: string; baseSeq?: number }));
+  if (b.id !== undefined && !/^[\w-]{6,64}$/.test(b.id)) return c.json({ ok: false, error: { code: "BAD_ID", title: "Bad command id", detail: "", recovery: "Refresh the page." } }, 400);
   if (!b.type || !(b.type in HANDLERS)) return c.json({ ok: false, error: { code: "CMD_UNKNOWN", title: "Unknown action", detail: `No such command: ${b.type}`, recovery: "Refresh the page." } }, 400);
   const type = b.type as CommandType;
   const need = NEEDS[type];
   if (need && !can(s.role, need)) return c.json({ ok: false, error: { code: "FORBIDDEN", title: "Your role can't do this", detail: `${s.role.replace("_", " ")} is not allowed to ${type}.`, recovery: "Ask someone with access, such as the Owner." } }, 403);
   if (b.source === "ai_proposal" && !can(s.role, "ai.confirm")) return c.json({ ok: false, error: { code: "FORBIDDEN", title: "Your role can't confirm AI proposals", detail: "", recovery: "Ask the Owner." } }, 403);
-  const out = await submit({ name: s.name, role: s.role }, type, b.payload ?? {}, b.source === "ai_proposal" ? "ai_proposal" : "user");
-  return c.json(out, out.ok ? 200 : 422);
+  const out = await submit({ name: s.name, role: s.role }, type, b.payload ?? {}, b.source === "ai_proposal" ? "ai_proposal" : "user", { id: b.id, at: b.at, baseSeq: b.baseSeq });
+  return c.json(out, out.ok ? 200 : ((out.status ?? 422) as 409 | 422));
 });
 
 app.onError((e, c) => { console.error(e); return c.json({ ok: false, error: { code: "SERVER_ERROR", title: "Something went wrong on our side", detail: "Nothing was saved.", recovery: "Try again." } }, 500); });

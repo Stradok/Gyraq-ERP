@@ -6,6 +6,7 @@ import { PERSONAS } from "../rbac";
 import { useERP, useWorld } from "../store";
 import { execute, replay, type CommandInput, type CommandRecord, type CommandType } from "./commands";
 import type { Problem, Result } from "./core";
+import { getUser, pushCommand, remote } from "./remote";
 
 export function showProblem(p: Problem) {
   toast.error(p.title, { description: `${p.detail} ${p.recovery}`, duration: 9000 });
@@ -15,10 +16,13 @@ export function showProblem(p: Problem) {
 export function run<T extends CommandType>(type: T, payload: CommandInput<T>, opts: { quiet?: boolean; source?: "user" | "ai_proposal" } = {}): Result<unknown> {
   const st = useERP.getState();
   const db = getDB();
-  const actor = PERSONAS.find((p) => p.role === st.role)!.name;
+  const me = remote ? getUser() : null;
+  const actor = me?.name ?? PERSONAS.find((p) => p.role === st.role)!.name;
   const seq = st.cmdSeq + 1;
-  const rec: CommandRecord = { id: `c${seq}`, type, payload, at: new Date().toISOString(), date: db.today, actor, role: st.role, source: opts.source ?? "user" };
+  const id = remote ? `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}` : `c${seq}`;
+  const rec: CommandRecord = { id, type, payload, at: new Date().toISOString(), date: db.today, actor, role: me?.role ?? st.role, source: opts.source ?? "user" };
   const res = execute(db, rec);
+  if (res.ok && remote) { pushCommand(rec); useWorld.getState().bump(); if (!opts.quiet && res.message) toast.success(res.message); return res; }
   if (res.ok) {
     useERP.setState((s) => ({ commands: [...s.commands, rec].slice(-400), cmdSeq: seq, anchor: db.today }));
     useWorld.getState().bump();
@@ -30,6 +34,7 @@ export function run<T extends CommandType>(type: T, payload: CommandInput<T>, op
 /** Re-apply the persisted log after a reload. A log recorded on another day is dropped: the seed moves with the calendar. */
 const replayed = new WeakSet<object>();
 export function replayAll() {
+  if (remote) return; // remote mode loads its world from the server instead
   const st = useERP.getState();
   const db = getDB();
   if (replayed.has(db)) return; // React strict mode runs effects twice; replay must be idempotent

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
+import { getToken } from "../engine/remote";
 import { answerLocal } from "./local";
 import type { ToolResult } from "./tools";
 import { withBase } from "../config";
@@ -22,7 +23,7 @@ export function useAssistant(user: { name: string; title: string }) {
   const topic = useRef<string | undefined>(undefined);
   const handled = useRef(new Set<string>());
   useEffect(() => { fetch(withBase("/api/ai/status")).then((r) => r.json()).then(setLlm).catch(() => setLlm({ enabled: false, model: "", provider: "" })); }, []);
-  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: () => ({ user, role: useERP.getState().role, page: pathname, commands: useERP.getState().commands, anchor: useERP.getState().anchor }) }) });
+  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: () => ({ user, role: useERP.getState().role, token: getToken(), page: pathname, commands: useERP.getState().commands, anchor: useERP.getState().anchor }) }) });
   const useLlm = !!llm?.enabled;
 
   const llmMsgs: VMsg[] = useMemo(() => chat.messages.map((m) => {

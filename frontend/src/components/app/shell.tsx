@@ -18,6 +18,7 @@ import { NAV, titleFor } from "@/lib/nav";
 import { PERSONAS, ROLE_MODULES, canSee } from "@/lib/rbac";
 import { useERP, useWorld } from "@/lib/store";
 import { replayAll } from "@/lib/engine/client";
+import { getUser, loadRemoteWorld, remote, signOut, startPolling } from "@/lib/engine/remote";
 import { useApprovals, useMounted } from "@/lib/hooks";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -130,7 +131,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const persona = PERSONAS.find((p) => p.role === role)!;
 
   const version = useWorld((s) => s.version);
-  useEffect(() => { void Promise.resolve(useERP.persist.rehydrate()).then(() => replayAll()); }, []);
+  useEffect(() => {
+    if (!remote) { void Promise.resolve(useERP.persist.rehydrate()).then(() => replayAll()); return; }
+    void useERP.persist.rehydrate();
+    loadRemoteWorld().then((ok) => { if (!ok) signOut(); else startPolling(); });
+  }, []);
   useEffect(() => { if (pathname) visit({ href: pathname, title: titleFor(pathname) }); }, [pathname, visit]);
   useEffect(() => {
     let last = 0;
@@ -213,15 +218,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel className="flex items-center justify-between">Demo persona <Badge variant="outline" className="text-[10px]">Simulated</Badge></DropdownMenuLabel>
-                {PERSONAS.map((p) => (
+                <DropdownMenuLabel className="flex items-center justify-between">{remote ? (getUser()?.email ?? "Signed in") : "Demo persona"} <Badge variant="outline" className="text-[10px]">{remote ? "Live" : "Simulated"}</Badge></DropdownMenuLabel>
+                {!remote && PERSONAS.map((p) => (
                   <DropdownMenuItem key={p.role} onClick={() => setRole(p.role)} className="items-start gap-2">
                     <span className={cn("mt-1 size-1.5 rounded-full", p.role === role ? "bg-primary" : "bg-transparent")} />
                     <span className="leading-tight"><span className="block text-[13px]">{p.name}</span><span className="block text-[11px] text-muted-foreground">{p.title}</span></span>
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => { reset(); setTimeout(() => window.location.reload(), 50); }}><RotateCcw />Reset demo data</DropdownMenuItem>
+                {remote ? <DropdownMenuItem onClick={signOut}><RotateCcw />Sign out</DropdownMenuItem> : <DropdownMenuItem onClick={() => { reset(); setTimeout(() => window.location.reload(), 50); }}><RotateCcw />Reset demo data</DropdownMenuItem>}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

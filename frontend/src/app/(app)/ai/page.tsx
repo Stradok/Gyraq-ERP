@@ -7,6 +7,7 @@ import { ArrowUp, Check, Loader2, Mic, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AiChip } from "@/components/app/ai";
 import { Md, ToolResultView } from "@/components/app/ai-results";
+import { getToken } from "@/lib/engine/remote";
 import { answerLocal } from "@/lib/ai/local";
 import type { ToolResult, ToolUI } from "@/lib/ai/tools";
 import { TOOLS } from "@/lib/ai/tools";
@@ -36,7 +37,7 @@ function Chat() {
   const sent = useRef(false);
 
   useEffect(() => { fetch(withBase("/api/ai/status")).then((r) => r.json()).then(setLlm).catch(() => setLlm({ enabled: false, model: "", provider: "" })); }, []);
-  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: () => ({ user: { name: persona.name, title: persona.title }, role: useERP.getState().role }) }) });
+  const chat = useChat({ transport: new DefaultChatTransport({ api: withBase("/api/chat"), body: () => ({ user: { name: persona.name, title: persona.title }, role: useERP.getState().role, token: getToken(), commands: useERP.getState().commands, anchor: useERP.getState().anchor }) }) });
   const useLlm = !!llm?.enabled;
 
   const llmMsgs: VMsg[] = useMemo(() => chat.messages.map((m) => {

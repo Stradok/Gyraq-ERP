@@ -47,10 +47,19 @@ assert.ok(ord.body.ok, JSON.stringify(ord.body));
 console.log(`  command latency (execute + project + commit): ${Date.now() - t0} ms`);
 console.log("  ✓ create customer, duplicate, role guard, order");
 
+const stale = await call("/api/commands", { method: "POST", token: owner, body: JSON.stringify({ type: "CreateLead", payload: {}, id: "c-stale-1", baseSeq: 0 }) });
+assert.equal(stale.status, 409, "client behind the log must resync"); assert.equal(stale.body.error.code, "STALE");
+const lead = { company: "Stamp Traders", contact: "X", city: "Karachi", source: "web", repId: "", value: 1000, probability: 10 };
+const head = Math.max(...(await call("/api/commands?since=0", { token: owner })).body.commands.map((x: { seq: number }) => x.seq));
+const first = await call("/api/commands", { method: "POST", token: owner, body: JSON.stringify({ type: "CreateLead", payload: lead, id: "c-lead-12345", baseSeq: head, at: new Date().toISOString() }) });
+assert.equal(first.status, 200, JSON.stringify(first.body)); assert.equal(first.body.rec.id, "c-lead-12345", "client id kept so both copies derive identical ids");
+assert.equal((await call("/api/commands", { method: "POST", token: owner, body: JSON.stringify({ type: "CreateLead", payload: lead, id: "c-lead-12345", baseSeq: head + 5 }) })).status, 409, "same command id is not applied twice");
+console.log("  ✓ stale clients rejected, client ids kept, no double-apply");
+
 console.log("Postgres state");
 const row = (await pool.query("select data from records where kind='customers' and id=$1", [custId])).rows[0];
 assert.equal(row.data.name, "API Test Mart", "projected into records");
-const n = (await pool.query("select count(*)::int as n from commands")).rows[0].n; assert.equal(n, 2, "only successful commands are stored");
+const n = (await pool.query("select count(*)::int as n from commands")).rows[0].n; assert.equal(n, 3, "only successful commands are stored");
 const tot = (await pool.query("select sum(debit) d, sum(credit) c from journal_lines")).rows[0]; assert.ok(Math.abs(tot.d - tot.c) < 0.01, "ledger balances in SQL");
 await assert.rejects(pool.query("update journal_lines set debit = debit + 1 where line_no = 1"), /append-only/, "ledger is append-only");
 await assert.rejects(pool.query("delete from commands"), /append-only/, "command log is append-only");
@@ -67,7 +76,7 @@ await W.boot(); // as after a restart: seed + stored commands
 const w2 = W.world;
 assert.equal(w2.customers.length, before); assert.ok(w2.customers.some((c) => c.id === custId), "customer survives restart");
 assert.equal(w2.orders.find((o) => o.customerId === custId)?.id, ordRow.data.id, "same ids after replay");
-const since = (await call("/api/commands?since=1", { token: rep })).body.commands; assert.equal(since.length, 1, "sync since cursor");
+const since = (await call("/api/commands?since=1", { token: rep })).body.commands; assert.equal(since.length, 2, "sync since cursor");
 console.log("  ✓ restart rebuilds identical state; sync cursor");
 
 console.log("\nAll backend checks passed.");
