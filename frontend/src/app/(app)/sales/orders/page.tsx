@@ -27,7 +27,7 @@ function Orders() {
   const rows = useMemo(() => (role === "rep" ? orders.filter((o) => o.repId === me.id) : orders), [orders, role, me.id]);
   return (
     <>
-      <PageHeader module="sales" title="Sales" description={role === "rep" ? "Your orders" : "Orders from draft to fulfilment. Stock is reserved when an order is confirmed."} actions={can(role, "order.create") && <Button size="sm" asChild><Link href="/sales/orders/new"><Plus />New order</Link></Button>} />
+      <PageHeader module="sales" title="Sales" description={role === "rep" ? "Your orders" : "Orders from draft to fulfilment. Stock is reserved when an order is confirmed."} actions={can(role, "order.create") ? <Button size="sm" asChild><Link href="/sales/orders/new"><Plus />New order</Link></Button> : <Button size="sm" disabled title="Your role can't create orders. Switch to Owner, Admin, Sales Manager or Order Booker (bottom of the sidebar)."><Plus />New order</Button>} />
       <Page>
         <RangeBanner range={range} />
         <DataTable<SalesOrder>
