@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, Building2, Factory, Landmark, GraduationCap, LayoutDashboard, MessagesSquare, Plug, Receipt, Settings, ShoppingCart, Truck, UserSquare, Users, Warehouse, Workflow, type LucideIcon } from "lucide-react";
+import { BarChart3, Boxes, Building2, Factory, Landmark, Bot, GraduationCap, LayoutDashboard, MessagesSquare, Plug, Receipt, Settings, ShoppingCart, Truck, UserSquare, Users, Warehouse, Workflow, type LucideIcon } from "lucide-react";
 import type { Module } from "./rbac";
 
 export interface NavItem { module: Module; label: string; href: string; icon: LucideIcon; section: string }
@@ -15,6 +15,7 @@ export const NAV: NavItem[] = [
   { module: "employees", label: "Employees", href: "/employees", icon: UserSquare, section: "People" },
   { module: "reports", label: "Reports", href: "/reports", icon: BarChart3, section: "Insights" },
   { module: "ai", label: "AI Command Center", href: "/ai", icon: MessagesSquare, section: "Insights" },
+  { module: "ai", label: "Agent Center", href: "/agents", icon: Bot, section: "Insights" },
   { module: "automations", label: "Automations", href: "/automations", icon: Workflow, section: "System" },
   { module: "integrations", label: "Integrations", href: "/integrations", icon: Plug, section: "System" },
   { module: "overview", label: "Role guides", href: "/learn", icon: GraduationCap, section: "System" },

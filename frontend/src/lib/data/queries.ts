@@ -397,7 +397,7 @@ export function cashProjection(extraPOs: PurchaseOrder[] = []): { weeks: CashWee
       if (diffDays(when, t) <= 91 && diffDays(when, t) > 0) { const w = wk(when); buckets[w]!.com += remaining; if (remaining > 1_000_000) buckets[w]!.drivers.push({ label: `Open ${p.number} (${s.name})`, amount: remaining }); }
     }
     // payroll, rent, recurring
-    const lastPay = db.payroll[0]!;
+    const lastPay = db.payroll[0] ?? { net: 0 };
     const rec = (code: string[]) => { const m3 = glNet(code, addDays(t, -90), t) / 3; return m3; };
     const utilM = rec(["6030"]), fuelFr = rec(["6040", "6050"]), misc = rec(["6060", "6070", "6080", "6090", "6100", "6110", "6990", "6020"]);
     for (let d = addDays(t, 1); diffDays(d, t) <= 91; d = addDays(d, 1)) {
@@ -510,7 +510,7 @@ export function insights(): Insight[] {
     for (const o of overdue) byCus.set(o.customer.id, (byCus.get(o.customer.id) ?? 0) + o.balance);
     const top = [...byCus.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
     const topShare = top.reduce((s, [, v]) => s + v, 0) / Math.max(1, overdue30);
-    out.push({
+    if (overdue.length) out.push({
       id: "ins_collections", kind: "collection_risk", severity: "high", title: "Cash collection risk has increased",
       statement: `${M(overdue30)} is more than 30 days overdue across ${byCus.size} customers. ${top.length} customers account for ${(topShare * 100).toFixed(0)}% of it.`,
       why: top.map(([id, v]) => { const s = customerStats(id); return `${cus.get(id)!.name}: ${M(v)} overdue, oldest ${s.maxDaysOverdue} days, risk score ${s.risk}`; }),
@@ -528,6 +528,8 @@ export function insights(): Insight[] {
         confidence: r.confidence, basis: r.basis, generatedAt: stamp, generator: "computed", action: { label: "Create purchase order", href: "/inventory/replenishment", propose: { recId: r.id } },
       });
     }
+
+    if (!db.scenario.indusBillId) return out; // the remaining insights are written around the demo company's scripted scenarios
 
     // supplier price anomaly
     const ib = db.bills.find((b) => b.id === db.scenario.indusBillId)!;
@@ -617,6 +619,10 @@ export function insights(): Insight[] {
 }
 
 export function aiBrief() {
+  if (!getDB().invoices.length) {
+    const t = getDB().today;
+    return { paragraph: "No sales have been recorded yet, so there is nothing to summarise. Once you add products, customers and opening stock and book a first order, this brief will report revenue, cash and risks from your own ledger.", actions: [{ text: "Finish company setup", href: "/setup" }, { text: "Add your products and customers", href: "/inventory" }, { text: "Book the first sales order", href: "/sales/orders/new" }], generatedAt: `${t}T06:00:00+05:00` };
+  }
   const k = overviewKpis(), pv = profitVariance(), t = getDB().today;
   const revGrowth = k.prev.revenue ? (k.cur.revenue / k.prev.revenue - 1) * 100 : 0;
   const worst = [...pv.cats].sort((a, b) => a.mix + a.rate - (b.mix + b.rate))[0]!;

@@ -21,6 +21,8 @@ interface State {
   readNotifs: string[];
   actedRecs: Record<string, "accepted" | "dismissed">;
   mutedTypes: string[];
+  agentOn: Record<string, boolean>;
+  agentRuns: Record<string, { at: string; summary: string }>;
   savedViews: Record<string, SavedView[]>;
   history: { id: string; q: string; at: string }[];
   commands: CommandRecord[];
@@ -34,13 +36,15 @@ interface State {
   markRead: (ids: string[]) => void;
   actRec: (id: string, v: "accepted" | "dismissed") => void;
   toggleMuted: (k: string) => void;
+  setAgentOn: (id: string, on: boolean) => void;
+  recordAgentRun: (id: string, summary: string) => void;
   saveView: (table: string, v: SavedView) => void;
   deleteView: (table: string, label: string) => void;
   addHistory: (q: string) => void;
   reset: () => void;
 }
 
-const initial = { user: null as State["user"], role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], dismissReasons: {} as Record<string, string>, readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], savedViews: {} as Record<string, SavedView[]>, history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
+const initial = { user: null as State["user"], role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], dismissReasons: {} as Record<string, string>, readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], agentOn: {} as Record<string, boolean>, agentRuns: {} as Record<string, { at: string; summary: string }>, savedViews: {} as Record<string, SavedView[]>, history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
 
 export const useERP = create<State>()(
   persist(
@@ -53,6 +57,8 @@ export const useERP = create<State>()(
       dismiss: (id, reason) => set((s) => ({ dismissed: [...s.dismissed, id], dismissReasons: reason ? { ...s.dismissReasons, [id]: reason } : s.dismissReasons })),
       markRead: (ids) => set((s) => ({ readNotifs: [...new Set([...s.readNotifs, ...ids])] })),
       actRec: (id, v) => set((s) => ({ actedRecs: { ...s.actedRecs, [id]: v } })),
+      setAgentOn: (id, on) => set((s) => ({ agentOn: { ...s.agentOn, [id]: on } })),
+      recordAgentRun: (id, summary) => set((s) => ({ agentRuns: { ...s.agentRuns, [id]: { at: new Date().toISOString(), summary } } })),
       toggleMuted: (k) => set((s) => ({ mutedTypes: s.mutedTypes.includes(k) ? s.mutedTypes.filter((x) => x !== k) : [...s.mutedTypes, k] })),
       saveView: (t, v) => set((s) => ({ savedViews: { ...s.savedViews, [t]: [...(s.savedViews[t] ?? []).filter((x) => x.label !== v.label), v] } })),
       deleteView: (t, label) => set((s) => ({ savedViews: { ...s.savedViews, [t]: (s.savedViews[t] ?? []).filter((x) => x.label !== label) } })),
