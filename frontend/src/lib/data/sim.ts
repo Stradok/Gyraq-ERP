@@ -126,8 +126,9 @@ const WH_OF_CITY: Record<string, string> = {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const pad = (n: number, w: number) => String(n).padStart(w, "0");
 
-export function buildDB(): DB {
-  const today = todayPK();
+/** `anchor` pins the seed's "today" (the backend stores it so its data stays put between restarts). */
+export function buildDB(anchor?: ISODate): DB {
+  const today = anchor ?? todayPK();
   const start = addMonths(today, -HIST_MONTHS);
   const rnd = mulberry32(20261006);
   const int = (a: number, b: number) => a + Math.floor(rnd() * (b - a + 1));

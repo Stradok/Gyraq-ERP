@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler", "strict": true, "noEmit": true,
+    "skipLibCheck": true, "esModuleInterop": true, "noUncheckedIndexedAccess": true, "types": ["node"],
+    "paths": { "@/*": ["../frontend/src/*"] }
+  },
+  "include": ["src", "tests", "../frontend/src/lib/engine", "../frontend/src/lib/data", "../frontend/src/lib/rbac.ts", "../frontend/src/lib/search.ts"],
+  "exclude": ["../frontend/src/lib/engine/client.ts"]
+}

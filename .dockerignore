@@ -1,0 +1,9 @@
+**/node_modules
+.git
+frontend/.next
+frontend/public
+frontend/tests
+docs
+supabase.md
+**/.env
+**/.env.local

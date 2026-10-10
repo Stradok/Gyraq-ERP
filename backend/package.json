@@ -1,0 +1,29 @@
+{
+  "name": "meridian-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "migrate": "tsx src/cli.ts migrate",
+    "reset": "tsx src/cli.ts reset",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/api.test.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+# Self-hosted Meridian ERP:  docker compose up -d   (API on :4000, Postgres on :5433)
+name: meridian
+services:
+  db:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: meridian, POSTGRES_PASSWORD: "${DB_PASSWORD:-meridian}", POSTGRES_DB: meridian }
+    ports: ["5433:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U meridian"], interval: 3s, retries: 20 }
+  api:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: postgres://meridian:${DB_PASSWORD:-meridian}@db:5432/meridian
+      JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"
+      DEMO_PASSWORD: "${DEMO_PASSWORD:-meridian-demo}"
+      CORS_ORIGIN: "${CORS_ORIGIN:-*}"
+    ports: ["4000:4000"]
+    restart: unless-stopped
+volumes:
+  pgdata: {}
