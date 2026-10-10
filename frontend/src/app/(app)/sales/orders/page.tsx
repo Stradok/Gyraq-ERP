@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
@@ -23,8 +24,9 @@ function Orders() {
   const { orders } = useOverlay();
   const role = useERP((s) => s.role);
   const db = getDB();
-  const me = db.employees.find((e) => e.name === "Usman Ghani")!;
-  const rows = useMemo(() => (role === "rep" ? orders.filter((o) => o.repId === me.id) : orders), [orders, role, me.id]);
+  const who = useMe();
+  const me = db.employees.find((e) => e.name === who.empName);
+  const rows = useMemo(() => (role === "rep" ? orders.filter((o) => o.repId === me?.id) : orders), [orders, role, me?.id]);
   return (
     <>
       <PageHeader module="sales" title="Sales" description={role === "rep" ? "Your orders" : "Orders from draft to fulfilment. Stock is reserved when an order is confirmed."} actions={can(role, "order.create") ? <Button size="sm" asChild><Link href="/sales/orders/new"><Plus />New order</Link></Button> : <Button size="sm" disabled title="Your role can't create orders. Switch to Owner, Admin, Sales Manager or Order Booker (bottom of the sidebar)."><Plus />New order</Button>} />

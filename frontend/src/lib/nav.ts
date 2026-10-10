@@ -38,7 +38,7 @@ export const TABS: Partial<Record<Module, { label: string; href: string }[]>> = 
     { label: "Journal & ledger", href: "/finance/journal" }, { label: "Bank reconciliation", href: "/finance/reconciliation" }, { label: "Tax & FBR", href: "/finance/tax" },
   ],
   employees: [{ label: "Directory", href: "/employees" }, { label: "Leave", href: "/employees/leave" }, { label: "Payroll", href: "/employees/payroll" }],
-  settings: [{ label: "Organization", href: "/settings" }, { label: "Policies & tax", href: "/settings/policies" }, { label: "Users & roles", href: "/settings/roles" }, { label: "Notifications", href: "/settings/notifications" }, { label: "Audit log", href: "/settings/audit" }, { label: "AI", href: "/settings/ai" }, { label: "System health", href: "/settings/health" }],
+  settings: [{ label: "Getting started", href: "/setup" }, { label: "Organization", href: "/settings" }, { label: "Policies & tax", href: "/settings/policies" }, { label: "Users & roles", href: "/settings/roles" }, { label: "Notifications", href: "/settings/notifications" }, { label: "Audit log", href: "/settings/audit" }, { label: "AI", href: "/settings/ai" }, { label: "System health", href: "/settings/health" }],
 };
 
 export function titleFor(path: string): string {

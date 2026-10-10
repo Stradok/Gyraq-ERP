@@ -19,7 +19,8 @@ export default function Leave() {
   const db = getDB();
   const role = useERP((s) => s.role);
   const [open, setOpen] = useState(false);
-  const me = db.employees.find((e) => e.name === useMe().empName);
+  const who = useMe();
+  const me = db.employees.find((e) => e.name === who.empName);
   const rows = role === "employee" && me ? db.leaves.filter((l) => l.employeeId === me.id) : db.leaves;
   const st = (l: LeaveRequest): string => l.status;
   const decide = (l: LeaveRequest, decision: "approved" | "rejected") => { const a = db.approvals.find((x) => x.type === "leave" && x.ref === l.id && x.status === "pending"); if (a) run("DecideApproval", { id: a.id, decision }); };

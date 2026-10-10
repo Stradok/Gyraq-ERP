@@ -1,4 +1,5 @@
 "use client";
+import { Needs } from "@/components/app/needs";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
@@ -16,11 +17,11 @@ import { money, money2 } from "@/lib/format";
 import { useWorld } from "@/lib/store";
 
 interface Row { productId: string; cartons: number; disc: number }
-export default function NewQuote() {
+function NewQuoteInner() {
   useWorld((s) => s.version);
   const router = useRouter();
   const db = getDB();
-  const [cid, setCid] = useState(db.customers[0]!.id);
+  const [cid, setCid] = useState(db.customers[0]?.id ?? "");
   const [days, setDays] = useState("14");
   const [rows, setRows] = useState<Row[]>([]);
   const [pick, setPick] = useState(false);
@@ -48,4 +49,14 @@ export default function NewQuote() {
       </Page>
     </>
   );
+}
+
+export default function NewQuote() {
+  useWorld((s) => s.version);
+  const db = getDB();
+  const missing = [
+    ...(db.customers.length ? [] : [{ text: "Add a customer", href: "/customers" }]),
+    ...(db.products.length ? [] : [{ text: "Add a product", href: "/inventory" }]),
+  ];
+  return missing.length ? <Needs title="New quotation" missing={missing} /> : <NewQuoteInner />;
 }

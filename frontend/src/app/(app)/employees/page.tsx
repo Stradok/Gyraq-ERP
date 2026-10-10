@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { Suspense, useState } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,12 +20,13 @@ function Directory() {
   const sp = useSearchParams();
   const db = getDB();
   const role = useERP((s) => s.role);
+  const who = useMe();
   const [sel, setSel] = useState<Employee | null>(null);
   const [openNew, setOpenNew] = useState(false);
   const [edit, setEdit] = useState<Employee | null>(null);
   const hr = can(role, "hr.manage");
   const seeSalary = role === "owner" || role === "admin" || role === "finance";
-  const rows = role === "employee" ? db.employees.filter((e) => e.name === "Kashif Raza") : db.employees;
+  const rows = role === "employee" ? db.employees.filter((e) => e.name === who.empName) : db.employees;
   const depts = [...new Set(db.employees.map((e) => e.department))];
   return (
     <>

@@ -37,7 +37,7 @@ type DlgProps = { open: boolean; onOpenChange: (o: boolean) => void };
 export function NewCustomerDialog({ open, onOpenChange, onCreated }: DlgProps & { onCreated?: (id: string) => void }) {
   const db = getDB();
   const reps = db.employees.filter((e) => e.position.startsWith("Order Booker"));
-  const [f, setF] = useState({ name: "", channel: "retail", city: "Karachi", area: "", registered: false, ntn: "", cnic: "", atl: false, limit: "500000", terms: "7", contact: "", phone: "", email: "", rep: reps[0]!.id });
+  const [f, setF] = useState({ name: "", channel: "retail", city: "Karachi", area: "", registered: false, ntn: "", cnic: "", atl: false, limit: "500000", terms: "7", contact: "", phone: "", email: "", rep: reps[0]?.id ?? "" });
   const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }));
   const { err, submit } = useSubmit("CreateCustomer", (v) => { onOpenChange(false); onCreated?.((v as { id: string }).id); });
   return (
@@ -94,7 +94,7 @@ export function NewSupplierDialog({ open, onOpenChange, onCreated }: DlgProps & 
 export function NewProductDialog({ open, onOpenChange, onCreated }: DlgProps & { onCreated?: (id: string) => void }) {
   const db = getDB();
   const goods = db.suppliers.filter((s) => s.kind === "goods");
-  const [f, setF] = useState({ name: "", brand: "", category: "packaged_foods", supplier: goods[0]!.id, carton: "24", price: "", cost: "", mrp: "", tax: "third_schedule", hs: "", shelf: "365" });
+  const [f, setF] = useState({ name: "", brand: "", category: "packaged_foods", supplier: goods[0]?.id ?? "", carton: "24", price: "", cost: "", mrp: "", tax: "third_schedule", hs: "", shelf: "365" });
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
   const { err, submit } = useSubmit("CreateProduct", (v) => { onOpenChange(false); onCreated?.((v as { id: string }).id); });
   const n = (v: string) => +v || 0;
@@ -124,7 +124,7 @@ export function NewProductDialog({ open, onOpenChange, onCreated }: DlgProps & {
 
 export function NewLeadDialog({ open, onOpenChange }: DlgProps) {
   const reps = getDB().employees.filter((e) => e.position.startsWith("Order Booker"));
-  const [f, setF] = useState({ company: "", contact: "", city: "Karachi", source: "Field visit", rep: reps[0]!.id, value: "500000" });
+  const [f, setF] = useState({ company: "", contact: "", city: "Karachi", source: "Field visit", rep: reps[0]?.id ?? "", value: "500000" });
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
   const { err, submit } = useSubmit("CreateLead", () => onOpenChange(false));
   return (

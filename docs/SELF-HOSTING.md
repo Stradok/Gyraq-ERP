@@ -15,6 +15,9 @@ docker compose up -d --build
 
 Demo accounts (password = `DEMO_PASSWORD`): `owner@meridian.demo`, `finance@meridian.demo`, `sales.manager@meridian.demo`, `rep.karachi@meridian.demo`, `warehouse.khi@meridian.demo`, `procurement@meridian.demo`, `admin@meridian.demo`, `employee@meridian.demo`.
 
+## Starting a real customer (blank company)
+Set `COMPANY_MODE=empty`, `OWNER_EMAIL`, `OWNER_NAME` and `OWNER_PASSWORD` in `.env` before the first start (use a fresh database: `docker compose down -v`). There is no sample data and only the Owner account exists. The Owner lands on **Getting started**: company profile, warehouses, suppliers and products, customers, opening stock, opening cash and bank balances, then the team. Opening entries post against Owner's Capital. Not covered yet: receivables and payables already owed at the start date.
+
 ## Showing it on a call
 1. `docker compose up -d` (data persists in the `pgdata` volume).
 2. Open http://localhost:3000, sign in as the Owner, share your screen. Use a second browser profile as another role: changes appear there within about 4 seconds.

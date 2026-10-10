@@ -1,4 +1,5 @@
 "use client";
+import { Needs } from "@/components/app/needs";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,7 @@ import { useWorld } from "@/lib/store";
 
 interface Row { productId: string; description: string; qty: string; price: string }
 
-export default function NewBill() {
+function NewBillInner() {
   useWorld((s) => s.version);
   const router = useRouter();
   const db = getDB();
@@ -70,4 +71,13 @@ export default function NewBill() {
       </Page>
     </>
   );
+}
+
+export default function NewBill() {
+  useWorld((s) => s.version);
+  const db = getDB();
+  const missing = [
+    ...(db.suppliers.length ? [] : [{ text: "Add a supplier", href: "/suppliers" }]),
+  ];
+  return missing.length ? <Needs title="New supplier bill" missing={missing} /> : <NewBillInner />;
 }

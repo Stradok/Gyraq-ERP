@@ -27,7 +27,7 @@ function ProductPicker({ value, onChange }: { value: string; onChange: (v: strin
 
 function TransferDialog({ open, onOpenChange, wh }: { open: boolean; onOpenChange: (o: boolean) => void; wh: string }) {
   const db = getDB();
-  const [from, setFrom] = useState(wh), [to, setTo] = useState(db.warehouses.find((w) => w.id !== wh)!.id), [pid, setPid] = useState(db.products[0]!.id), [qty, setQty] = useState("");
+  const [from, setFrom] = useState(wh), [to, setTo] = useState(db.warehouses.find((w) => w.id !== wh)?.id ?? ""), [pid, setPid] = useState(db.products[0]?.id ?? ""), [qty, setQty] = useState("");
   const c = db.stock.get(`${pid}|${from}`);
   const avail = c ? c.on - c.res : 0;
   return (
@@ -47,7 +47,7 @@ function TransferDialog({ open, onOpenChange, wh }: { open: boolean; onOpenChang
 
 function AdjustDialog({ open, onOpenChange, wh }: { open: boolean; onOpenChange: (o: boolean) => void; wh: string }) {
   const db = getDB();
-  const [pid, setPid] = useState(db.products[0]!.id), [delta, setDelta] = useState(""), [reason, setReason] = useState("");
+  const [pid, setPid] = useState(db.products[0]?.id ?? ""), [delta, setDelta] = useState(""), [reason, setReason] = useState("");
   const c = db.stock.get(`${pid}|${wh}`);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -69,7 +69,7 @@ function Warehouses() {
   useWorld((s) => s.version);
   const db = getDB();
   const role = useERP((s) => s.role);
-  const [sel, setSel] = useState(sp.get("wh") ?? db.warehouses[0]!.id);
+  const [sel, setSel] = useState(sp.get("wh") ?? db.warehouses[0]?.id ?? "");
   const [transfer, setTransfer] = useState(sp.get("transfer") === "1");
   const [adjust, setAdjust] = useState(false);
   const rows = stockRows();

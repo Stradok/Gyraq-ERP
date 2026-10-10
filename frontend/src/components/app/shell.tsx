@@ -138,6 +138,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     void useERP.persist.rehydrate();
     loadRemoteWorld().then((r) => { if (r === "auth") signOut(); else startPolling(); });
   }, []);
+  useEffect(() => { if (remote && mounted && (role === "owner" || role === "admin") && !getDB().company.setupDone && pathname !== "/setup" && !pathname.startsWith("/settings")) router.replace("/setup"); }, [version, mounted, role, pathname, router]);
   useEffect(() => { if (pathname) visit({ href: pathname, title: titleFor(pathname) }); }, [pathname, visit]);
   useEffect(() => {
     let last = 0;

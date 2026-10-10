@@ -1,4 +1,5 @@
 "use client";
+import { Needs } from "@/components/app/needs";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
@@ -16,12 +17,12 @@ import { useWorld } from "@/lib/store";
 
 interface Row { productId: string; cartons: string; price: string }
 
-export default function NewPO() {
+function NewPOInner() {
   useWorld((s) => s.version);
   const router = useRouter();
   const db = getDB();
   const goods = db.suppliers.filter((s) => s.kind === "goods");
-  const [sid, setSid] = useState(goods[0]!.id), [wid, setWid] = useState(db.warehouses[0]!.id);
+  const [sid, setSid] = useState(goods[0]?.id ?? ""), [wid, setWid] = useState(db.warehouses[0]?.id ?? "");
   const [rows, setRows] = useState<Row[]>([]);
   const [pick, setPick] = useState(false);
   const sup = goods.find((s) => s.id === sid)!;
@@ -60,4 +61,15 @@ export default function NewPO() {
       </Page>
     </>
   );
+}
+
+export default function NewPO() {
+  useWorld((s) => s.version);
+  const db = getDB();
+  const missing = [
+    ...(db.suppliers.some((s) => s.kind === "goods") ? [] : [{ text: "Add a supplier", href: "/suppliers" }]),
+    ...(db.products.length ? [] : [{ text: "Add a product", href: "/inventory" }]),
+    ...(db.warehouses.length ? [] : [{ text: "Create a warehouse", href: "/setup" }]),
+  ];
+  return missing.length ? <Needs title="New purchase order" missing={missing} /> : <NewPOInner />;
 }

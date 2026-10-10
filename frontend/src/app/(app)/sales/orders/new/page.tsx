@@ -1,4 +1,6 @@
 "use client";
+import { Needs } from "@/components/app/needs";
+import { useWorld } from "@/lib/store";
 import { useMe } from "@/lib/me";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -21,13 +23,14 @@ import { cn } from "@/lib/utils";
 
 interface Row { productId: string; cartons: number; disc: number }
 
-export default function NewOrder() {
+function NewOrderInner() {
   const router = useRouter();
   const role = useERP((s) => s.role);
   const db = getDB();
-  const me = db.employees.find((e) => e.name === useMe().empName);
+  const who = useMe();
+  const me = db.employees.find((e) => e.name === who.empName);
   const custs = role === "rep" ? db.customers.filter((c) => c.repId === me?.id) : db.customers;
-  const [cid, setCid] = useState(custs[0]!.id);
+  const [cid, setCid] = useState(custs[0]?.id ?? "");
   const [rows, setRows] = useState<Row[]>([]);
   const [pick, setPick] = useState(false);
   const c = idx().cus.get(cid)!;
@@ -122,3 +125,14 @@ function Check_({ ok, warn, bad, label, detail }: { ok?: boolean; warn?: boolean
   );
 }
 void StatusBadge;
+
+export default function NewOrder() {
+  useWorld((s) => s.version);
+  const db = getDB();
+  const missing = [
+    ...(db.customers.length ? [] : [{ text: "Add a customer", href: "/customers" }]),
+    ...(db.products.length ? [] : [{ text: "Add a product", href: "/inventory" }]),
+    ...(db.warehouses.length ? [] : [{ text: "Create a warehouse", href: "/setup" }]),
+  ];
+  return missing.length ? <Needs title="New sales order" missing={missing} /> : <NewOrderInner />;
+}

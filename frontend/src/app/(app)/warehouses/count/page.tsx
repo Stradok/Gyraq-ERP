@@ -1,4 +1,5 @@
 "use client";
+import { Needs } from "@/components/app/needs";
 import { useMe } from "@/lib/me";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -20,7 +21,7 @@ function Count() {
   useWorld((s) => s.version);
   const db = getDB();
   const role = useERP((s) => s.role);
-  const [wh, setWh] = useState(sp.get("wh") ?? db.warehouses[0]!.id);
+  const [wh, setWh] = useState(sp.get("wh") ?? db.warehouses[0]?.id ?? "");
   const [vals, setVals] = useState<Record<string, string>>({});
   const [result, setResult] = useState<{ number: string; variance: number } | null>(null);
   // The sheet is the 8 highest-value stocked lines at this warehouse (a cycle count of A-class items).
@@ -52,4 +53,13 @@ function Count() {
     </>
   );
 }
-export default function Route() { return <Suspense><Count /></Suspense>; }
+function RouteInner() { return <Suspense><Count /></Suspense>; }
+
+export default function Route() {
+  useWorld((s) => s.version);
+  const db = getDB();
+  const missing = [
+    ...(db.warehouses.length ? [] : [{ text: "Create a warehouse", href: "/setup" }]),
+  ];
+  return missing.length ? <Needs title="Stock count" missing={missing} /> : <RouteInner />;
+}

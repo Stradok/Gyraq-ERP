@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -29,11 +30,12 @@ function Customers() {
     minDays: sp.get("minDays") ? +sp.get("minDays")! : undefined, band: sp.get("band") ?? undefined,
   }), [sp]);
   const hasF = Object.values(f).some(Boolean);
-  const rep = db.employees.find((e) => e.name === "Usman Ghani")!;
+  const who = useMe();
+  const rep = db.employees.find((e) => e.name === who.empName);
   const rows = useMemo(() => {
     const base = hasF ? filterCustomers(f) : customerRows();
-    return role === "rep" ? base.filter((r) => r.c.repId === rep.id) : base;
-  }, [f, hasF, role, rep.id]);
+    return role === "rep" ? base.filter((r) => r.c.repId === rep?.id) : base;
+  }, [f, hasF, role, rep?.id]);
   const chips = [f.overdue && "Overdue", f.city && `City = ${f.city}`, f.minBalance && `Balance > ${money(f.minBalance)}`, f.minDays && `Overdue ≥ ${f.minDays} days`, f.band && `Risk = ${titleCase(f.band)}`].filter(Boolean) as string[];
   return (
     <>

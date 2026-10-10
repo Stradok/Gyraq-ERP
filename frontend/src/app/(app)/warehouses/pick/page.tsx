@@ -1,4 +1,5 @@
 "use client";
+import { Needs } from "@/components/app/needs";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PackageCheck, Truck } from "lucide-react";
@@ -20,7 +21,7 @@ function Pick() {
   useWorld((s) => s.version);
   const role = useERP((s) => s.role);
   const db = getDB();
-  const [wh, setWh] = useState(sp.get("wh") ?? db.warehouses[0]!.id);
+  const [wh, setWh] = useState(sp.get("wh") ?? db.warehouses[0]?.id ?? "");
   const [dispatch, setDispatch] = useState<string | null>(null);
   const orders = db.orders.filter((o) => o.warehouseId === wh && (o.status === "reserved" || o.status === "confirmed")).sort((a, b) => a.date.localeCompare(b.date));
   const ops = can(role, "warehouse.ops");
@@ -58,4 +59,13 @@ function Pick() {
     </>
   );
 }
-export default function Route() { return <Suspense><Pick /></Suspense>; }
+function RouteInner() { return <Suspense><Pick /></Suspense>; }
+
+export default function Route() {
+  useWorld((s) => s.version);
+  const db = getDB();
+  const missing = [
+    ...(db.warehouses.length ? [] : [{ text: "Create a warehouse", href: "/setup" }]),
+  ];
+  return missing.length ? <Needs title="Pick orders" missing={missing} /> : <RouteInner />;
+}

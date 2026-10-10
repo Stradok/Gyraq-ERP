@@ -14,6 +14,10 @@ services:
       DATABASE_URL: postgres://meridian:${DB_PASSWORD:-meridian}@db:5432/meridian
       JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"
       DEMO_PASSWORD: "${DEMO_PASSWORD:-meridian-demo}"
+      COMPANY_MODE: "${COMPANY_MODE:-demo}"   # demo = sample company; empty = a real company that starts blank
+      OWNER_EMAIL: "${OWNER_EMAIL:-}"
+      OWNER_NAME: "${OWNER_NAME:-Owner}"
+      OWNER_PASSWORD: "${OWNER_PASSWORD:-}"
       CORS_ORIGIN: "${CORS_ORIGIN:-*}"
     ports: ["4000:4000"]
     restart: unless-stopped

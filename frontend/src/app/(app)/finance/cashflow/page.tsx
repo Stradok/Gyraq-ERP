@@ -15,7 +15,7 @@ export default function CashFlow() {
   const ov = useOverlay();
   const base = useMemo(() => cashProjection(), []);
   const cp = useMemo(() => cashProjection(ov.newlyApproved), [ov.newlyApproved]);
-  const ins = useMemo(() => insights().find((i) => i.kind === "cashflow")!, []);
+  const ins = useMemo(() => insights().find((i) => i.kind === "cashflow"), []);
   const min = [...cp.weeks].sort((a, b) => a.closing - b.closing)[0]!;
   const breach = cp.weeks.filter((w) => w.closing < getDB().settings.minCash).length;
   const delta = cp.weeks[12]!.closing - base.weeks[12]!.closing;
@@ -25,7 +25,7 @@ export default function CashFlow() {
       <Page>
         {ov.newlyApproved.length > 0 && <div className="rounded-lg border border-info/40 bg-info/5 p-3 text-[13px]">Includes {ov.newlyApproved.length} purchase order{ov.newlyApproved.length > 1 ? "s" : ""} approved in this session ({money(ov.newlyApproved.reduce((s, p) => s + p.total, 0))}). Week-13 balance is {money(Math.abs(delta))} {delta < 0 ? "lower" : "higher"} than before.</div>}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4"><Kpi label="Cash today" value={moneyCompact(cashBalance())} /><Kpi label="Lowest projected" value={moneyCompact(min.closing)} sub={`Week ${min.week} (${dateShort(min.start)})`} tone={min.closing < getDB().settings.minCash ? "danger" : undefined} /><Kpi label="Weeks below minimum" value={breach} sub={`Minimum ${moneyCompact(getDB().settings.minCash)}`} tone={breach ? "danger" : "success"} /><Kpi label="Week-13 balance" value={moneyCompact(cp.weeks[12]!.closing)} /></div>
-        <InsightCard insight={ins} compact />
+        {ins && <InsightCard insight={ins} compact />}
         <Section title="Projected cash balance" actions={<AiChip label="Forecast" />}><CashChart data={cp.weeks.map((w) => ({ label: `W${w.week}`, closing: w.closing }))} min={getDB().settings.minCash} /></Section>
         <Section title="Weekly detail" flush>
           <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-[13px]"><thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-2 text-left font-medium">Week</th><th className="px-3 py-2 text-right font-medium">Opening</th><th className="px-3 py-2 text-right font-medium">Collections</th><th className="px-3 py-2 text-right font-medium">Supplier payments</th><th className="px-3 py-2 text-right font-medium">Payroll</th><th className="px-3 py-2 text-right font-medium">Recurring</th><th className="px-3 py-2 text-right font-medium">Open POs</th><th className="px-3 py-2 text-right font-medium">Closing</th><th className="px-4 py-2 text-left font-medium">Drivers</th></tr></thead><tbody>

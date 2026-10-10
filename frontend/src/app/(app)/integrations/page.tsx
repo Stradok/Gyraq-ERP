@@ -27,9 +27,9 @@ export default function Integrations() {
   const db = getDB();
   const [sel, setSel] = useState<OutboxMsg | null>(null);
   const [fbrOpen, setFbrOpen] = useState(false);
-  const inv = db.invoices[0]!;
-  const payload = fbrPayload(db, inv);
-  const checks = validateFbr(payload, inv);
+  const inv = db.invoices[0];
+  const payload = inv ? fbrPayload(db, inv) : null;
+  const checks = inv && payload ? validateFbr(payload, inv) : [];
   return (
     <>
       <PageHeader title="Integrations" description="Every connector shows whether it is simulated or live. In this demo nothing is sent externally; the outbox shows what would have gone out." />
@@ -37,7 +37,7 @@ export default function Integrations() {
         <SheetContent className="w-full sm:max-w-[480px]">{sel && <><SheetHeader><div className="flex items-center gap-2"><StatusBadge status="simulated" label="Simulated: not sent" /><span className="text-xs text-muted-foreground">{sel.channel}</span></div><SheetTitle>{sel.subject}</SheetTitle><SheetDescription>To {sel.to}</SheetDescription></SheetHeader><pre className="mx-4 whitespace-pre-wrap rounded-md border bg-subtle p-3 font-sans text-[13px] leading-relaxed">{sel.body}</pre></>}</SheetContent>
       </Sheet>
       <Sheet open={fbrOpen} onOpenChange={setFbrOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-[640px]"><SheetHeader><SheetTitle>FBR payload for {inv.number}</SheetTitle><SheetDescription>The exact request body the connector will send to PRAL in sandbox or live mode. Shown here without transmitting.</SheetDescription></SheetHeader>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-[640px]"><SheetHeader><SheetTitle>FBR payload for {inv?.number ?? "your first invoice"}</SheetTitle><SheetDescription>The exact request body the connector will send to PRAL in sandbox or live mode. Shown here without transmitting.</SheetDescription></SheetHeader>
           <div className="space-y-3 px-4 pb-6"><ul className="space-y-1 rounded-md border p-2.5 text-xs">{checks.map((c) => <li key={c.label} className={cn(c.ok ? "text-success" : "text-danger")}>{c.ok ? "✓" : "✗"} {c.label}</li>)}</ul><pre className="max-h-[60dvh] overflow-auto rounded-md border bg-subtle p-3 font-mono text-[11px] leading-relaxed">{JSON.stringify(payload, null, 2)}</pre></div></SheetContent>
       </Sheet>
       <Page>

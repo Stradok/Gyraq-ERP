@@ -1,4 +1,5 @@
 "use client";
+import { Needs } from "@/components/app/needs";
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -22,7 +23,7 @@ function Receive() {
   const sp = useSearchParams();
   useWorld((s) => s.version);
   const db = getDB();
-  const [wh, setWh] = useState(sp.get("wh") ?? db.warehouses[0]!.id);
+  const [wh, setWh] = useState(sp.get("wh") ?? db.warehouses[0]?.id ?? "");
   const pos = db.pos.filter((p) => p.warehouseId === wh && (p.status === "approved" || p.status === "partially_received"));
   const [poId, setPoId] = useState<string | null>(null);
   const po = pos.find((p) => p.id === poId) ?? null;
@@ -89,4 +90,13 @@ function Receive() {
     </>
   );
 }
-export default function Route() { return <Suspense><Receive /></Suspense>; }
+function RouteInner() { return <Suspense><Receive /></Suspense>; }
+
+export default function Route() {
+  useWorld((s) => s.version);
+  const db = getDB();
+  const missing = [
+    ...(db.warehouses.length ? [] : [{ text: "Create a warehouse", href: "/setup" }]),
+  ];
+  return missing.length ? <Needs title="Receive goods" missing={missing} /> : <RouteInner />;
+}

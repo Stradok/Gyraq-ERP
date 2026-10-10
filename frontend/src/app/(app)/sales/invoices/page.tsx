@@ -1,4 +1,5 @@
 "use client";
+import { useMe } from "@/lib/me";
 import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { RangeBanner, inRange, useRange } from "@/components/app/range-banner";
@@ -18,11 +19,12 @@ function Invoices() {
   const ov = useOverlay();
   const role = useERP((s) => s.role);
   const db = getDB();
-  const rep = db.employees.find((e) => e.name === "Usman Ghani")!;
+  const who = useMe();
+  const rep = db.employees.find((e) => e.name === who.empName);
   const rows = useMemo(() => {
     const base = db.invoices.map(ov.invoice);
-    return role === "rep" ? base.filter((i) => idx().cus.get(i.customerId)!.repId === rep.id) : base;
-  }, [db, ov, role, rep.id]);
+    return role === "rep" ? base.filter((i) => idx().cus.get(i.customerId)!.repId === rep?.id) : base;
+  }, [db, ov, role, rep?.id]);
   const st = (i: Invoice) => invoiceStatusLabel(i, db.today);
   return (
     <>
