@@ -1,7 +1,7 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { AlertTriangle, Check, CircleDashed, PackageCheck, Truck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 const STEPS = ["Draft", "Confirmed", "Picked", "Dispatched", "Invoiced"] as const;
 
 export default function OrderDetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   useWorld((s) => s.version);
   const role = useERP((s) => s.role);
   const [dispatch, setDispatch] = useState(false);

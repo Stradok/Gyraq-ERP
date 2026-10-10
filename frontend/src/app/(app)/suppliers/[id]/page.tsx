@@ -1,6 +1,6 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { useState } from "react";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { Kpi } from "@/components/app/kpi";
@@ -13,7 +13,7 @@ import { dateShort, money, money2, moneyCompact } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
 
 export default function SupplierDetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   const s = idx().sup.get(id);
   const ov = useOverlay();
   const st = s ? supplierStats(id) : null;

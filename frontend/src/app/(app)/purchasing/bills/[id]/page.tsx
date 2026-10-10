@@ -1,6 +1,6 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import { useState } from "react";
-import { useParams } from "next/navigation";
 import { AlertTriangle, Check } from "lucide-react";
 import { toast } from "sonner";
 import { run } from "@/lib/engine/client";
@@ -19,7 +19,7 @@ import { can } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 export default function BillDetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   const role = useERP((s) => s.role);
   const [comment, setComment] = useState("");
   const [payOpen, setPayOpen] = useState(false);

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 // Pure-logic checks: period resolution, natural-language query parsing, FBR mapping, local assistant grounding.
 import assert from "node:assert/strict";
 import { resolvePeriod } from "../src/lib/data/dates";
@@ -73,6 +74,9 @@ runOn(db, () => {
   env({}); assert.equal(route("reasoning"), null, "no key → computed mode");
   Object.assign(process.env, keep);
   console.log("  ✓ AI edition routing (demo / standard / premium, fallbacks, overrides)");
+
+  execFileSync(process.execPath, ["--check", new URL("../public/sw.js", import.meta.url).pathname]); // a broken worker silently disables offline mode
+  console.log("  ✓ service worker parses");
 
   console.log("FBR mapper on seeded invoices");
   let bad = 0;

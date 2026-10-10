@@ -10,6 +10,8 @@ const mono = JetBrains_Mono({ variable: "--font-jetbrains", subsets: ["latin"] }
 
 export const metadata: Metadata = {
   title: { default: "Meridian ERP – AI-native ERP for distribution", template: "%s · Meridian ERP" },
+  manifest: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/manifest.webmanifest`,
+  icons: { icon: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/icon-192.png`, apple: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/icon-192.png` },
   description: "Interactive demo of an AI-native ERP for Pakistani wholesale and distribution: sales, inventory, purchasing, finance and an approval-first AI layer.",
 };
 export const viewport: Viewport = { themeColor: "#0b0c0e" };

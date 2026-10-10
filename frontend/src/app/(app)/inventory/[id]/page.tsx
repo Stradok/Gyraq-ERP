@@ -1,6 +1,6 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { Kpi } from "@/components/app/kpi";
 import { Mono, StatusBadge } from "@/components/app/status";
@@ -13,7 +13,7 @@ import { diffDays } from "@/lib/data/dates";
 import { useOverlay } from "@/lib/overlay";
 
 export default function ProductDetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   const ov = useOverlay();
   const p = idx().prod.get(id);
   if (!p) return <Page><p className="text-sm text-muted-foreground">Product not found.</p></Page>;

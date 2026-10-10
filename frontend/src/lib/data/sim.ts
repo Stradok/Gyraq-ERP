@@ -989,6 +989,8 @@ export function buildDB(anchor?: ISODate): DB {
 let base: DB | null = null;
 let anchorOverride: ISODate | null = null;
 /** Remote mode: the seed is pinned to the date the server stored, not to today. */
+/** Drop the in-memory world so the next getDB() rebuilds it from the seed (remote resync). */
+export function resetWorld() { base = null; }
 let modeOverride: "demo" | "empty" = "demo";
 export function setAnchor(a: ISODate, mode: "demo" | "empty" = "demo") { if (anchorOverride !== a || modeOverride !== mode) { anchorOverride = a; modeOverride = mode; base = null; } }
 let resolver: (() => DB | undefined) | null = null;

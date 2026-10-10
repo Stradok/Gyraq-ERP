@@ -1,6 +1,6 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { Check, CircleDashed } from "lucide-react";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { StatusBadge, Mono } from "@/components/app/status";
@@ -17,7 +17,7 @@ import { useOverlay } from "@/lib/overlay";
 import { cn } from "@/lib/utils";
 
 export default function PODetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   useWorld((s) => s.version);
   const role = useERP((s) => s.role);
   const ov = useOverlay();

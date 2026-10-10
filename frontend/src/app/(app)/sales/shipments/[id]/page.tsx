@@ -1,6 +1,6 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
@@ -13,7 +13,7 @@ import { useERP, useWorld } from "@/lib/store";
 import { can } from "@/lib/rbac";
 
 export default function ShipmentDetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   useWorld((s) => s.version);
   const role = useERP((s) => s.role);
   const sh = getDB().shipments.find((s) => s.id === id);

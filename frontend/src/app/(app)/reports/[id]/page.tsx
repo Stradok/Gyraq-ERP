@@ -1,6 +1,7 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import { useMemo, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { DataTable } from "@/components/app/data-table";
 import { Bars } from "@/components/charts/charts";
@@ -10,7 +11,7 @@ import { money, moneyM, num } from "@/lib/format";
 import { PRESETS, REPORTS, runReport, type ReportRow } from "@/lib/reports";
 
 export default function ReportView() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   const router = useRouter();
   const sp = useSearchParams();
   const def = REPORTS.find((r) => r.id === id);

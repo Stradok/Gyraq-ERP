@@ -1,8 +1,9 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import { meNow } from "@/lib/me";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Mail, MessageCircle, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ import { can } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 export default function CustomerDetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   const router = useRouter();
   useWorld((s) => s.version);
   const ov = useOverlay();

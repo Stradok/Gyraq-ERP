@@ -20,6 +20,7 @@ import { PERSONAS, ROLE_MODULES, canSee } from "@/lib/rbac";
 import { useERP, useWorld } from "@/lib/store";
 import { replayAll } from "@/lib/engine/client";
 import { getUser, loadRemoteWorld, remote, signOut, startPolling } from "@/lib/engine/remote";
+import { OfflineSupport } from "./offline";
 import { useApprovals, useMounted } from "@/lib/hooks";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -135,7 +136,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!remote) { void Promise.resolve(useERP.persist.rehydrate()).then(() => replayAll()); return; }
     void useERP.persist.rehydrate();
-    loadRemoteWorld().then((ok) => { if (!ok) signOut(); else startPolling(); });
+    loadRemoteWorld().then((r) => { if (r === "auth") signOut(); else startPolling(); });
   }, []);
   useEffect(() => { if (pathname) visit({ href: pathname, title: titleFor(pathname) }); }, [pathname, visit]);
   useEffect(() => {
@@ -184,6 +185,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {canSee(role, "ai") && (
               <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex"><Link href="/ai"><span className="size-1.5 rounded-full bg-ai" />Ask</Link></Button>
             )}
+            <OfflineSupport />
             <Button variant="ghost" size="sm" asChild className="relative gap-1.5">
               <Link href="/approvals">
                 <span className="hidden sm:inline">Approvals</span>

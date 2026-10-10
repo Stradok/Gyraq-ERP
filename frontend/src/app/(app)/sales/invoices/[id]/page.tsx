@@ -1,6 +1,6 @@
 "use client";
+import { useRouteId } from "@/lib/route-id";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
@@ -18,7 +18,7 @@ import { can } from "@/lib/rbac";
 import { diffDays } from "@/lib/data/dates";
 
 export default function InvoiceDetail() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteId();
   useWorld((s) => s.version);
   const ov = useOverlay();
   const role = useERP((s) => s.role);
