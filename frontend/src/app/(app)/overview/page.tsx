@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useMemo } from "react";
-import { ArrowRight, Check, X } from "lucide-react";
+import { ArrowRight, Check, GraduationCap, X } from "lucide-react";
 import { run } from "@/lib/engine/client";
 import { Button } from "@/components/ui/button";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
@@ -44,6 +44,14 @@ export default function OverviewPage() {
     <>
       <PageHeader title="Overview" description={`${dateLong(k.today)} · ${fiscalQuarter(k.today)} · ${ORG.name}`} actions={<Button variant="outline" size="sm" asChild><Link href="/reports">All reports</Link></Button>} />
       <Page>
+        {!dismissed.includes("tour") && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-4 py-3 text-[13px]">
+            <GraduationCap className="size-4 text-primary" />
+            <span className="flex-1">New here? This is a working demo: you can add, edit and cancel records. See what <b className="font-medium">{persona.title}</b> does and how to enter each thing.</span>
+            <Button size="sm" asChild><Link href="/learn">Open role guide</Link></Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Hide" onClick={() => useERP.getState().dismiss("tour")}><X /></Button>
+          </div>
+        )}
         <section className="rounded-lg border bg-card" style={{ borderLeft: "2px solid var(--ai)" }}>
           <div className="grid gap-0 lg:grid-cols-[1.5fr_1fr]">
             <div className="p-4 md:p-5">

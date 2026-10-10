@@ -16,6 +16,7 @@ interface State {
   favorites: RecentItem[];
   recents: RecentItem[];
   dismissed: string[];
+  dismissReasons: Record<string, string>;
   readNotifs: string[];
   actedRecs: Record<string, "accepted" | "dismissed">;
   mutedTypes: string[];
@@ -28,7 +29,7 @@ interface State {
   toggleCollapsed: () => void;
   toggleFavorite: (i: RecentItem) => void;
   visit: (i: RecentItem) => void;
-  dismiss: (id: string) => void;
+  dismiss: (id: string, reason?: string) => void;
   markRead: (ids: string[]) => void;
   actRec: (id: string, v: "accepted" | "dismissed") => void;
   toggleMuted: (k: string) => void;
@@ -38,7 +39,7 @@ interface State {
   reset: () => void;
 }
 
-const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], savedViews: {} as Record<string, SavedView[]>, history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
+const initial = { role: "owner" as Role, collapsed: false, favorites: [], recents: [], dismissed: [], dismissReasons: {} as Record<string, string>, readNotifs: [], actedRecs: {}, mutedTypes: [] as string[], savedViews: {} as Record<string, SavedView[]>, history: [] as { id: string; q: string; at: string }[], commands: [] as CommandRecord[], cmdSeq: 0, anchor: "" };
 
 export const useERP = create<State>()(
   persist(
@@ -48,7 +49,7 @@ export const useERP = create<State>()(
       toggleCollapsed: () => set((s) => ({ collapsed: !s.collapsed })),
       toggleFavorite: (i) => set((s) => ({ favorites: s.favorites.some((f) => f.href === i.href) ? s.favorites.filter((f) => f.href !== i.href) : [...s.favorites, i].slice(-8) })),
       visit: (i) => set((s) => ({ recents: [i, ...s.recents.filter((r) => r.href !== i.href)].slice(0, 8) })),
-      dismiss: (id) => set((s) => ({ dismissed: [...s.dismissed, id] })),
+      dismiss: (id, reason) => set((s) => ({ dismissed: [...s.dismissed, id], dismissReasons: reason ? { ...s.dismissReasons, [id]: reason } : s.dismissReasons })),
       markRead: (ids) => set((s) => ({ readNotifs: [...new Set([...s.readNotifs, ...ids])] })),
       actRec: (id, v) => set((s) => ({ actedRecs: { ...s.actedRecs, [id]: v } })),
       toggleMuted: (k) => set((s) => ({ mutedTypes: s.mutedTypes.includes(k) ? s.mutedTypes.filter((x) => x !== k) : [...s.mutedTypes, k] })),

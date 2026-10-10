@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight, Check, ChevronRight, Info } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { Insight } from "@/lib/data/queries";
@@ -46,7 +47,7 @@ export function InsightCard({ insight, compact }: { insight: Insight; compact?: 
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <Button size="sm" onClick={() => (insight.action.propose ? setOpen(true) : router.push(insight.action.href))}>{insight.action.label}</Button>
                 <Button size="sm" variant="outline" onClick={() => router.push(`/ai?q=${encodeURIComponent(`Investigate: ${insight.title}`)}`)}>Investigate</Button>
-                <Button size="sm" variant="ghost" onClick={() => { dismiss(insight.id); toast("Dismissed", { description: "We won't raise this again unless it gets worse." }); }}>Dismiss</Button>
+                <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="ghost">Dismiss</Button></DropdownMenuTrigger><DropdownMenuContent align="start"><DropdownMenuLabel>Why dismiss?</DropdownMenuLabel>{["Already handled", "Not relevant", "Expected, one-off", "Wrong, the data is off"].map((r) => <DropdownMenuItem key={r} onClick={() => { dismiss(insight.id, r); toast("Dismissed", { description: `${r}. We won't raise this again unless it gets worse.` }); }}>{r}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
                 <button onClick={() => setOpen(true)} className="ml-auto inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground">Why this?<ChevronRight className="size-3" /></button>
               </div>
             )}
