@@ -147,7 +147,7 @@ console.log("Permissions (R1)");
   for (const [type, rule] of Object.entries(COMMAND_PERMISSIONS)) for (const role of Object.keys(ROLE_EMAIL)) {
     const res = await cmd(toks[role]!, type, {});
     const allowed = can(role as never, rule.permission);
-    if (allowed) assert.notEqual(res.body?.error?.code === "FORBIDDEN" ? 403 : res.status, 403, `${role} should be allowed ${type}: ${JSON.stringify(res.body?.error)}`);
+    if (allowed) assert.notEqual(res.body?.error?.code, "FORBIDDEN", `${role} should be allowed ${type}: ${JSON.stringify(res.body?.error)}`); // record-level refusals (SCOPE) are tested separately
     else { assert.equal(res.status, 403, `${role} must not run ${type}`); assert.equal(res.body.error.code, "FORBIDDEN"); }
     checked++;
   }
@@ -163,7 +163,17 @@ console.log("Permissions (R1)");
   assert.equal((await cmd(toks.rep!, "RecordPayment", { customerId: theirs.id, amount: 1000, method: "cash" })).body.error.code, "SCOPE", "payments too");
   const lead = await cmd(toks.rep!, "CreateLead", { company: "Scope Traders", contact: "x", city: "Karachi", source: "web", repId: "someone-else", value: 1, probability: 10 });
   assert.equal(lead.status, 200, JSON.stringify(lead.body)); assert.equal(W.world.leads.find((l) => l.id === lead.body.value.id)!.repId, usman.id, "a rep's lead is always assigned to them");
-  console.log("  ✓ rep scope: own customers and leads only");
+  // fail-closed: a harmless customerId cannot disguise someone else's order, and unknown records are refused
+  const theirOrder = w.orders.find((o) => w.customers.find((c) => c.id === o.customerId)?.repId !== usman.id)!;
+  for (const type of ["ConfirmOrder", "CancelOrder", "RequestCreditOverride"]) {
+    const sneaky = await cmd(toks.rep!, type, { orderId: theirOrder.id, customerId: mine.id, reason: "x" });
+    assert.equal(sneaky.body.error.code, "SCOPE", `${type}: another rep's order refused even with an own customerId`);
+    assert.equal((await cmd(toks.rep!, type, { orderId: "no-such-order" })).body.error.code, "SCOPE", `${type}: unknown order refused`);
+  }
+  assert.equal((await cmd(toks.rep!, "SetQuoteStatus", { id: "no-such-quote", status: "sent" })).body.error.code, "SCOPE");
+  assert.equal((await cmd(toks.rep!, "MoveLead", { id: "no-such-lead", stage: "won" })).body.error.code, "SCOPE");
+  assert.equal((await cmd(toks.rep!, "CreateOrder", {})).body.error.code, "SCOPE", "no customer named: refused");
+  console.log("  ✓ rep scope: own customers and leads only, fail-closed");
 
   // 3. self: leave and expenses are always filed for the signed-in user
   const kashif = w.employees.find((e) => e.name === "Kashif Raza")!, other = w.employees.find((e) => e.name !== "Kashif Raza")!;

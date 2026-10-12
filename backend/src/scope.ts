@@ -7,6 +7,8 @@ type Fail = { ok: false; code: string; title: string; detail: string };
 type Pass = { ok: true; payload: Record<string, unknown> };
 const no = (code: string, title: string, detail: string): Fail => ({ ok: false, code, title, detail });
 
+const ORDER_KEYED = new Set<CommandType>(["ConfirmOrder", "CancelOrder", "RequestCreditOverride"]); // these act on an order id
+
 export function enforceScope(db: DB, who: Caller, type: CommandType, raw: unknown): Pass | Fail {
   const payload = { ...((raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>) };
   const scope = COMMAND_PERMISSIONS[type].scope;
@@ -28,15 +30,16 @@ export function enforceScope(db: DB, who: Caller, type: CommandType, raw: unknow
   if (scope === "own-lead") {
     if (type === "CreateLead") { payload.repId = me.id; return { ok: true, payload }; }
     const lead = db.leads.find((l) => l.id === payload.id);
-    return lead && lead.repId !== me.id ? no("SCOPE", "This lead isn't yours", "Order bookers can only work their own leads.") : { ok: true, payload };
+    return lead?.repId === me.id ? { ok: true, payload } : no("SCOPE", "This lead isn't yours", "Order bookers can only work their own leads."); // unknown lead: refused, never waved through
   }
 
   if (scope === "own-cust") {
-    const customerId = (payload.customerId as string | undefined)
-      ?? db.orders.find((o) => o.id === payload.orderId)?.customerId
-      ?? db.quotes.find((q) => q.id === payload.id)?.customerId;
+    // The customer comes from the record the command really acts on, never from a field the caller could set to something harmless.
+    const customerId = ORDER_KEYED.has(type) ? db.orders.find((o) => o.id === payload.orderId)?.customerId
+      : type === "SetQuoteStatus" ? db.quotes.find((q) => q.id === payload.id)?.customerId
+      : (payload.customerId as string | undefined);
     const c = db.customers.find((x) => x.id === customerId);
-    if (c && c.repId !== me.id) return no("SCOPE", "This customer isn't yours", "Order bookers can only work with customers assigned to them.");
+    if (c?.repId !== me.id) return no("SCOPE", "This customer isn't yours", "Order bookers can only work with customers assigned to them."); // unresolvable: refused
     if (type === "RequestCreditLimit") payload.requestedBy = who.name;
   }
   return { ok: true, payload };
