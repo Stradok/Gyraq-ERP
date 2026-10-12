@@ -9,6 +9,8 @@ import { answerLocal, INSUFFICIENT } from "../src/lib/ai/local";
 import { findGuide } from "../src/lib/ai/guide";
 import { validateExtraction } from "../src/lib/ai/extract";
 import { route, edition } from "../src/lib/ai/provider";
+import { bearer, verifyCaller } from "../src/lib/ai/session";
+import { csvCell } from "../src/lib/csv";
 import { checkFigures } from "../src/lib/ai/grounding";
 import { runTool } from "../src/lib/ai/tools";
 
@@ -78,6 +80,10 @@ runOn(db, () => {
   execFileSync(process.execPath, ["--check", new URL("../public/sw.js", import.meta.url).pathname]); // a broken worker silently disables offline mode
   console.log("  ✓ service worker parses");
 
+  assert.equal(csvCell('=HYPERLINK("x")'), `"'=HYPERLINK(""x"")"`, "formula neutralised");
+  assert.equal(csvCell("@SUM(A1)"), `"'@SUM(A1)"`); assert.equal(csvCell(-1250.5), '"-1250.5"', "numbers untouched"); assert.equal(csvCell("Metro Mart"), '"Metro Mart"');
+  console.log("  ✓ CSV export neutralises formula injection");
+
   console.log("FBR mapper on seeded invoices");
   let bad = 0;
   for (const inv of db.invoices.slice(0, 300)) { const p = fbrPayload(db, inv); const failed = validateFbr(p, inv).filter((c) => !c.ok); if (failed.length) { bad++; if (bad < 3) console.log("   ", inv.number, failed.map((f) => f.label).join(" | ")); } }
@@ -91,3 +97,16 @@ assert.ok(validateExtraction(good).every((c) => c.ok));
 assert.ok(validateExtraction({ ...good, total: 70 }).some((c) => !c.ok));
 console.log("  ✓ catches inconsistent totals");
 console.log("\nAll unit checks passed.");
+
+(async () => { // AI routes: identity comes from the backend, never from the request body
+    const realFetch = globalThis.fetch, keepApi = { a: process.env.API_URL, b: process.env.NEXT_PUBLIC_API_URL };
+    delete process.env.API_URL; delete process.env.NEXT_PUBLIC_API_URL;
+    assert.equal(await verifyCaller("anything"), undefined, "no backend configured = public demo");
+    process.env.API_URL = "http://api.test";
+    globalThis.fetch = (async (_u: string, init: RequestInit) => (String((init.headers as Record<string, string>).authorization).endsWith("good") ? new Response(JSON.stringify({ name: "Imran", role: "warehouse", title: "Warehouse Manager" })) : new Response("{}", { status: 401 }))) as never;
+    assert.equal((await verifyCaller("good"))?.role, "warehouse", "role comes from the backend");
+    assert.equal(await verifyCaller("bad"), null, "invalid token rejected"); assert.equal(await verifyCaller(undefined), null, "missing token rejected");
+    assert.equal(bearer(new Request("http://x", { headers: { authorization: "Bearer abc" } })), "abc");
+    globalThis.fetch = realFetch; process.env.API_URL = keepApi.a; if (keepApi.b) process.env.NEXT_PUBLIC_API_URL = keepApi.b; if (!keepApi.a) delete process.env.API_URL;
+    console.log("  ✓ AI routes take identity from the verified token");
+  })().catch((e) => { console.error(e); process.exit(1); });

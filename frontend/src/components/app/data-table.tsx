@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "./page-header";
 import { useERP } from "@/lib/store";
+import { csvCell } from "@/lib/csv";
 import { cn } from "@/lib/utils";
 
 export interface Col<T> {
@@ -108,7 +109,7 @@ export function DataTable<T>(p: Props<T>) {
   const clear = () => setSel(new Set());
 
   const exportCsv = () => {
-    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const esc = csvCell;
     const head = visCols.map((c) => esc(c.header)).join(",");
     const body = filtered.map((r) => visCols.map((c) => esc(c.exp ? c.exp(r) : c.sort ? c.sort(r) : "")).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([`${head}\n${body}`], { type: "text/csv" }));

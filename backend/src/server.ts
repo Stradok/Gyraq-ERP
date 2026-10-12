@@ -3,7 +3,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Context } from "hono";
 import { hashPassword, issue, throttled, verify, verifyPassword, type Session } from "./auth";
-import { config } from "./config";
+import { getConnInfo } from "@hono/node-server/conninfo";
+import { config, trustProxy } from "./config";
+import { log } from "./log";
 import { migrate, pool } from "./db";
 import { HANDLERS, PERSONAS, can, type Action, type CommandType } from "./engine";
 import { boot, commandsSince, mode, submit, world } from "./world";
@@ -15,18 +17,33 @@ const NEEDS: Partial<Record<CommandType, Action>> = {
   ClosePeriod: "period.close", ReopenPeriod: "period.close", UpdateSettings: "period.close", CreateEmployee: "hr.manage", UpdateEmployee: "hr.manage", RunPayroll: "hr.manage",
 };
 
-type Env = { Variables: { session: Session } };
+type Env = { Variables: { session: Session; rid: string } };
 const app = new Hono<Env>();
 app.use("*", cors({ origin: config.corsOrigin.includes("*") ? "*" : config.corsOrigin, allowHeaders: ["authorization", "content-type"] }));
+
+app.use("*", async (c, next) => {
+  const rid = c.req.header("x-request-id")?.slice(0, 64) || crypto.randomUUID(), t0 = Date.now();
+  c.set("rid", rid); c.header("x-request-id", rid);
+  await next();
+  log.info("request", { rid, method: c.req.method, path: new URL(c.req.url).pathname, status: c.res.status, ms: Date.now() - t0, user: c.get("session")?.sub });
+});
+const clientIp = (c: Context<Env>) => (trustProxy ? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() : undefined) || getConnInfo(c).remote.address || "unknown";
+async function authEvent(c: Context<Env>, event: string, ok: boolean, email: string | undefined, detail?: string, actor?: string) {
+  await pool.query("insert into auth_events(event,ok,email,actor,ip,request_id,detail) values ($1,$2,$3,$4,$5,$6,$7)", [event, ok, email?.toLowerCase() ?? null, actor ?? null, clientIp(c), c.get("rid"), detail ?? null]).catch((e) => log.error("auth_event_failed", { err: String(e) }));
+}
 
 app.get("/health", async (c) => { await pool.query("select 1"); return c.json({ ok: true, anchor: world.today }); });
 
 app.post("/auth/login", async (c) => {
   const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({} as { email?: string; password?: string }));
   if (!email || !password) return c.json({ error: "Enter your email and password." }, 400);
-  if (throttled(`${c.req.header("x-forwarded-for") ?? "local"}|${email.toLowerCase()}`)) return c.json({ error: "Too many attempts. Wait a few minutes." }, 429);
+  if (throttled(`${clientIp(c)}|${email.toLowerCase()}`)) return c.json({ error: "Too many attempts. Wait a few minutes." }, 429);
+  // Lockout: 5 failed sign-ins for this account in 15 minutes, whatever the address, blocks sign-in until the window passes.
+  const failed = (await pool.query("select count(*)::int n from auth_events where event='login' and not ok and email=$1 and at > now() - interval '15 minutes'", [email.toLowerCase()])).rows[0].n;
+  if (failed >= 5) { await authEvent(c, "login_locked", false, email); return c.json({ error: "Too many failed attempts. Try again in 15 minutes." }, 429); }
   const u = (await pool.query("select * from users where lower(email)=lower($1) and active", [email])).rows[0];
-  if (!u || !verifyPassword(password, u.pw_hash)) return c.json({ error: "Wrong email or password." }, 401);
+  if (!u || !verifyPassword(password, u.pw_hash)) { await authEvent(c, "login", false, email, u ? "bad password" : "unknown or disabled account"); return c.json({ error: "Wrong email or password." }, 401); }
+  await authEvent(c, "login", true, email);
   const s = { sub: u.id as string, email: u.email as string, name: u.name as string, role: u.role, emp: u.emp_name as string };
   return c.json({ token: issue(s), user: { id: s.sub, email: s.email, name: s.name, title: u.title, role: s.role, emp: s.emp } });
 });
@@ -42,7 +59,7 @@ const guard = async (c: Context<Env>, next: () => Promise<void>) => {
 };
 app.use("/api/*", guard);
 
-app.get("/api/me", (c) => c.json(c.get("session")));
+app.get("/api/me", async (c) => { const s = c.get("session"); const u = (await pool.query("select title from users where id=$1", [s.sub])).rows[0]; return c.json({ ...s, title: u?.title ?? "" }); });
 
 // ── user management (Owner and Admin) ──
 const ROLES = ["owner", "admin", "finance", "sales_manager", "rep", "warehouse", "procurement", "employee"];
@@ -64,6 +81,7 @@ app.post("/api/users", async (c) => {
   const emp = b.emp || name; // the employee record this person acts as (leave, expenses); may be added later
   if ((await pool.query("select 1 from users where lower(email)=$1", [email])).rowCount) return c.json({ error: "A user with this email already exists." }, 409);
   const r = await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6) returning id", [email, name, b.title ?? "", b.role, emp, hashPassword(b.password!)]);
+  await authEvent(c, "user_created", true, email, `role ${b.role}`, c.get("session").email);
   return c.json({ ok: true, id: r.rows[0].id });
 });
 app.patch("/api/users/:id", async (c) => {
@@ -79,6 +97,7 @@ app.patch("/api/users/:id", async (c) => {
   const demotes = (target.role === "owner" && ((b.role && b.role !== "owner") || b.active === false));
   if (demotes && (await pool.query("select count(*)::int n from users where role='owner' and active")).rows[0].n < 2) return c.json({ error: "There must always be at least one active Owner." }, 400);
   await pool.query("update users set role=coalesce($2,role), active=coalesce($3,active), title=coalesce($4,title), pw_hash=coalesce($5,pw_hash) where id=$1", [id, b.role ?? null, b.active ?? null, b.title ?? null, b.password ? hashPassword(b.password) : null]);
+  await authEvent(c, b.password ? "password_reset" : "user_updated", true, undefined, `user ${id}: ${JSON.stringify({ role: b.role, active: b.active, title: b.title })}`, s.email);
   return c.json({ ok: true });
 });
 
@@ -99,24 +118,24 @@ app.post("/api/commands", async (c) => {
   return c.json(out, out.ok ? 200 : ((out.status ?? 422) as 409 | 422));
 });
 
-app.onError((e, c) => { console.error(e); return c.json({ ok: false, error: { code: "SERVER_ERROR", title: "Something went wrong on our side", detail: "Nothing was saved.", recovery: "Try again." } }, 500); });
+app.onError((e, c) => { log.error("unhandled", { rid: c.get("rid"), err: String(e), stack: e instanceof Error ? e.stack : undefined }); return c.json({ ok: false, error: { code: "SERVER_ERROR", title: "Something went wrong on our side", detail: "Nothing was saved.", recovery: "Try again." } }, 500); });
 
 async function seedUsers() {
   if ((await pool.query("select count(*)::int as n from users")).rows[0].n > 0) return;
   if (mode === "empty") {
     if (!config.ownerEmail || config.ownerPassword.length < 8) throw new Error("COMPANY_MODE=empty needs OWNER_EMAIL and an OWNER_PASSWORD of at least 8 characters.");
     await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,'Owner','owner',$2,$3)", [config.ownerEmail.toLowerCase(), config.ownerName, hashPassword(config.ownerPassword)]);
-    console.log(`created the Owner account ${config.ownerEmail}`); return;
+    log.info("owner_created", { email: config.ownerEmail }); return;
   }
   const pw = hashPassword(config.demoPassword);
   for (const p of PERSONAS) await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6)", [p.email, p.name, p.title, p.role, p.empName, pw]);
-  console.log(`created ${PERSONAS.length} demo users (password from DEMO_PASSWORD)`);
+  log.info("demo_users_created", { count: PERSONAS.length });
 }
 
 export async function start() {
   await migrate(); await boot(); await seedUsers();
   const srv = serve({ fetch: app.fetch, port: config.port });
-  console.log(`API listening on :${config.port}`);
+  log.info("listening", { port: config.port, mode });
   return srv;
 }
 export { app };

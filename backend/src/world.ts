@@ -2,6 +2,7 @@
 import { pool } from "./db";
 import { Projector } from "./project";
 import { config } from "./config";
+import { log as logger } from "./log";
 import { buildDB, buildEmptyDB, execute, replay, runOn, setWorldResolver, todayPK, type CommandRecord, type CommandType, type DB, type Role } from "./engine";
 import type { Problem } from "../../frontend/src/lib/engine/core";
 
@@ -28,14 +29,14 @@ export async function boot() {
   world = mode === "empty" ? buildEmptyDB(anchor) : buildDB(anchor);
   const log = await commandsSince(0);
   const r = replay(world, log);
-  if (r.skipped) console.warn(`replay: ${r.skipped} stored commands were rejected on replay (code changed since they ran?)`);
+  if (r.skipped) logger.warn("replay_rejected_commands", { skipped: r.skipped, hint: "the engine rules changed since these commands ran" });
   const projected = (await pool.query("select value from meta where key='projected'")).rows[0];
   const c = await pool.connect();
   try {
-    if (fresh || !projected) { await c.query("begin"); await projector.full(c, world); await c.query("insert into meta(key,value) values ('projected','1') on conflict (key) do update set value='1'"); await c.query("commit"); console.log("seed written to Postgres"); }
+    if (fresh || !projected) { await c.query("begin"); await projector.full(c, world); await c.query("insert into meta(key,value) values ('projected','1') on conflict (key) do update set value='1'"); await c.query("commit"); logger.info("seed_written"); }
     else projector.adopt(world);
   } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); }
-  console.log(`world ready: anchor ${anchor}, ${log.length} stored commands`);
+  logger.info("world_ready", { anchor, mode, commands: log.length });
 }
 
 let chain: Promise<unknown> = Promise.resolve();

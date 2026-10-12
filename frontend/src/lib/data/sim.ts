@@ -590,7 +590,7 @@ export function buildDB(anchor?: ISODate): DB {
     // payment schedule
     const stopped = c.id === khan.id && diffDays(today, d) < 100;
     if (!stopped) {
-      let delay = profileDelay(c, inv, rr);
+      const delay = profileDelay(c, inv, rr);
       const split = rr() < 0.08;
       const amounts = split ? [r2(total * 0.6), r2(total - r2(total * 0.6))] : [total];
       amounts.forEach((amt, k) => {

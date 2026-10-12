@@ -18,6 +18,11 @@ Demo accounts (password = `DEMO_PASSWORD`): `owner@meridian.demo`, `finance@meri
 ## Starting a real customer (blank company)
 Set `COMPANY_MODE=empty`, `OWNER_EMAIL`, `OWNER_NAME` and `OWNER_PASSWORD` in `.env` before the first start (use a fresh database: `docker compose down -v`). There is no sample data and only the Owner account exists. The Owner lands on **Getting started**: company profile, warehouses, suppliers and products, customers, opening stock, opening cash and bank balances, then the team. Opening entries post against Owner's Capital. Not covered yet: receivables and payables already owed at the start date.
 
+## Security defaults
+- The stack **will not start** without `DB_PASSWORD` and `JWT_SECRET` (`.env.example` shows how to generate them). In production the API also refuses a JWT secret under 32 characters and `CORS_ORIGIN=*`.
+- Postgres, the API and the web app listen on `127.0.0.1` only. Put HTTPS in front with `deploy/Caddyfile`, and set `TRUST_PROXY=1` so login throttling sees real client addresses.
+- Five failed sign-ins on an account in 15 minutes lock it for the rest of that window. Sign-ins, lockouts and user changes are recorded in the append-only `auth_events` table. Logs are JSON, one line each, with a request id (`x-request-id` header).
+
 ## Showing it on a call
 1. `docker compose up -d` (data persists in the `pgdata` volume).
 2. Open http://localhost:3000, sign in as the Owner, share your screen. Use a second browser profile as another role: changes appear there within about 4 seconds.

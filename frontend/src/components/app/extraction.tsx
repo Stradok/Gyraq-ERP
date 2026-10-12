@@ -9,6 +9,7 @@ import { AiChip } from "./ai";
 import { ProblemBox } from "./forms";
 import { getDB } from "@/lib/data/queries";
 import { matchPO, matchProduct, matchSupplier, validateExtraction, type InvoiceExtractionT } from "@/lib/ai/extract";
+import { getToken } from "@/lib/engine/remote";
 import { withBase } from "@/lib/config";
 import { run } from "@/lib/engine/client";
 import type { Problem } from "@/lib/engine/core";
@@ -39,8 +40,8 @@ export function ExtractionSheet({ open, onOpenChange }: { open: boolean; onOpenC
     setBusy(true); setError(""); setX(null); setStep(0); setProb(null);
     try {
       const body = JSON.stringify({ mediaType: blob.type, data: await toBase64(blob) });
-      let res = await fetch(withBase("/api/extract"), { method: "POST", headers: { "content-type": "application/json" }, body });
-      if (res.status === 502) { await new Promise((r) => setTimeout(r, 4000)); res = await fetch(withBase("/api/extract"), { method: "POST", headers: { "content-type": "application/json" }, body }); } // free models are often busy; retry once
+      let res = await fetch(withBase("/api/extract"), { method: "POST", headers: { "content-type": "application/json", ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}) }, body });
+      if (res.status === 502) { await new Promise((r) => setTimeout(r, 4000)); res = await fetch(withBase("/api/extract"), { method: "POST", headers: { "content-type": "application/json", ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}) }, body }); } // free models are often busy; retry once
       const j = await res.json();
       if (!res.ok) { setError(j.error ?? "Extraction failed."); return; }
       setX(j.extraction); setModel(j.model);
@@ -49,7 +50,7 @@ export function ExtractionSheet({ open, onOpenChange }: { open: boolean; onOpenC
     } catch { setError("Couldn't reach the extraction service. Check your connection and try again."); }
     finally { setBusy(false); }
   };
-  const useSample = async (file: string) => { const r = await fetch(withBase(`/samples/${file}`)); await extract(await r.blob()); };
+  const loadSample = async (file: string) => { const r = await fetch(withBase(`/samples/${file}`)); await extract(await r.blob()); };
 
   const sup = supplierId ? db.suppliers.find((s) => s.id === supplierId) ?? null : null;
   const po = sup && x ? matchPO(db, sup.id, x.poReference) : null;
@@ -72,9 +73,9 @@ export function ExtractionSheet({ open, onOpenChange }: { open: boolean; onOpenC
               <button onClick={() => input.current?.click()} className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-muted-foreground hover:border-primary/50 hover:text-foreground"><FileUp className="size-6" />Choose an invoice (PNG, JPG, WebP or PDF, up to 4 MB)</button>
               <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden" aria-label="Invoice file" onChange={(e) => { const f = e.target.files?.[0]; if (f) void extract(f); e.target.value = ""; }} />
               <div className="text-xs text-muted-foreground">Or try a generated sample:</div>
-              <div className="flex flex-wrap gap-2">{SAMPLES.map((s) => <Button key={s.file} size="sm" variant="outline" onClick={() => void useSample(s.file)}>{s.label}</Button>)}</div>
+              <div className="flex flex-wrap gap-2">{SAMPLES.map((s) => <Button key={s.file} size="sm" variant="outline" onClick={() => void loadSample(s.file)}>{s.label}</Button>)}</div>
               {error && <p className="rounded-md border border-danger/40 bg-danger/5 p-2.5 text-xs text-danger">{error}</p>}
-              <p className="text-[11px] text-muted-foreground">Free vision models can take 20–40 seconds. The file is sent to the AI service to be read and isn't stored.</p>
+              <p className="text-[11px] text-muted-foreground">Free vision models can take 20–40 seconds. The file is sent to the AI service to be read and isn&apos;t stored.</p>
             </div>
           )}
           {busy && <ol className="space-y-2 py-4">{STEPS.map((t, i) => <li key={t} className="flex items-center gap-2">{i < step ? <Check className="size-4 text-success" /> : i === step ? <Loader2 className="size-4 animate-spin text-ai" /> : <span className="size-4 rounded-full border" />}<span className={cn(i > step && "text-muted-foreground")}>{t}</span></li>)}</ol>}

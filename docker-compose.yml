@@ -3,23 +3,24 @@ name: meridian
 services:
   db:
     image: postgres:17-alpine
-    environment: { POSTGRES_USER: meridian, POSTGRES_PASSWORD: "${DB_PASSWORD:-meridian}", POSTGRES_DB: meridian }
-    ports: ["5433:5432"]
+    environment: { POSTGRES_USER: meridian, POSTGRES_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env}", POSTGRES_DB: meridian }
+    ports: ["127.0.0.1:5433:5432"]   # database is reachable from this machine only
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U meridian"], interval: 3s, retries: 20 }
   api:
     build: { context: ., dockerfile: backend/Dockerfile }
     depends_on: { db: { condition: service_healthy } }
     environment:
-      DATABASE_URL: postgres://meridian:${DB_PASSWORD:-meridian}@db:5432/meridian
-      JWT_SECRET: "${JWT_SECRET:-dev-only-secret-change-me}"
+      DATABASE_URL: postgres://meridian:${DB_PASSWORD:?set DB_PASSWORD in .env}@db:5432/meridian
+      JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -hex 32)}"
       DEMO_PASSWORD: "${DEMO_PASSWORD:-meridian-demo}"
       COMPANY_MODE: "${COMPANY_MODE:-demo}"   # demo = sample company; empty = a real company that starts blank
       OWNER_EMAIL: "${OWNER_EMAIL:-}"
       OWNER_NAME: "${OWNER_NAME:-Owner}"
       OWNER_PASSWORD: "${OWNER_PASSWORD:-}"
-      CORS_ORIGIN: "${CORS_ORIGIN:-*}"
-    ports: ["4000:4000"]
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:3000}"
+      TRUST_PROXY: "${TRUST_PROXY:-0}"   # 1 only when a reverse proxy in front sets X-Forwarded-For
+    ports: ["${BIND_ADDR:-127.0.0.1}:4000:4000"]
     restart: unless-stopped
   web:
     build:
@@ -32,7 +33,7 @@ services:
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       GOOGLE_GENERATIVE_AI_API_KEY: "${GOOGLE_GENERATIVE_AI_API_KEY:-}"
-    ports: ["3000:3000"]
+    ports: ["${BIND_ADDR:-127.0.0.1}:3000:3000"]
     restart: unless-stopped
 volumes:
   pgdata: {}

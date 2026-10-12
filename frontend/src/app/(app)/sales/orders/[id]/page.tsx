@@ -58,7 +58,7 @@ export default function OrderDetail() {
         </>} />
       <DispatchDialog orderId={so.id} open={dispatch} onOpenChange={setDispatch} />
       <Dialog open={cancel} onOpenChange={setCancel}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Cancel {so.number}?</DialogTitle><DialogDescription>Reserved stock is released. This can't be undone.</DialogDescription></DialogHeader>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Cancel {so.number}?</DialogTitle><DialogDescription>Reserved stock is released. This can&apos;t be undone.</DialogDescription></DialogHeader>
           <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (audited)" aria-label="Reason" />
           <DialogFooter><Button variant="ghost" onClick={() => setCancel(false)}>Keep order</Button><Button variant="destructive" disabled={reason.trim().length < 3} onClick={() => { const r = run("CancelOrder", { orderId: so.id, reason }); if (r.ok) setCancel(false); }}>Cancel order</Button></DialogFooter>
         </DialogContent>

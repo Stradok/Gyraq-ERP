@@ -1,0 +1,41 @@
+name: Browser E2E
+# Runs the full stack (Postgres, API, web) and the remote-mode browser test. Manual or on pull requests that touch app code.
+# NOTE: written without being run on GitHub yet; the same steps pass locally via docker compose.
+on:
+  workflow_dispatch:
+  pull_request: { paths: ["frontend/**", "backend/**"] }
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: meridian, POSTGRES_PASSWORD: meridian, POSTGRES_DB: meridian }
+        ports: ["5433:5432"]
+        options: --health-cmd "pg_isready -U meridian" --health-interval 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://meridian:meridian@localhost:5433/meridian
+      JWT_SECRET: ci-only-secret-0123456789abcdef0123456789abcdef
+      DEMO_PASSWORD: meridian-demo
+      CORS_ORIGIN: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      API_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: pnpm install
+        working-directory: backend
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+      - run: pnpm start &
+        working-directory: backend
+      - run: pnpm build && (pnpm start -p 3000 &)
+        working-directory: frontend
+      - run: npx wait-on http://localhost:4000/health http://localhost:3000/login --timeout 120000
+      - run: BASE_URL=http://localhost:3000 node tests/e2e-remote.mjs | tee out.txt && ! grep -q "✗" out.txt
+        working-directory: frontend

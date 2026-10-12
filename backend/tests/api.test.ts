@@ -64,6 +64,7 @@ const made = await mk({ email: "new@x.com", name: "New Person", title: "Order Bo
 assert.equal(made.status, 200, JSON.stringify(made.body)); assert.equal((await mk({ email: "NEW@x.com", name: "New Person", role: "rep", password: "long-enough-1", emp })).status, 409, "duplicate email");
 const newTok = (await call("/auth/login", { method: "POST", body: JSON.stringify({ email: "new@x.com", password: "long-enough-1" }) })).body.token as string; assert.ok(newTok, "new user can sign in");
 assert.equal((await call("/api/me", { token: newTok })).body.role, "rep");
+assert.equal((await call("/api/me", { token: newTok })).body.title, "Order Booker", "/api/me gives the title the AI routes need");
 await call(`/api/users/${made.body.id}`, { method: "PATCH", token: owner, body: JSON.stringify({ role: "warehouse" }) });
 assert.equal((await cmd(newTok, "CreateOrder", {})).status, 403, "role change applies on the existing token immediately");
 await call(`/api/users/${made.body.id}`, { method: "PATCH", token: owner, body: JSON.stringify({ active: false }) });
@@ -71,6 +72,24 @@ assert.equal((await call("/api/me", { token: newTok })).status, 401, "disabled u
 const ownerId = (await call("/api/me", { token: owner })).body.sub;
 assert.equal((await call(`/api/users/${ownerId}`, { method: "PATCH", token: owner, body: JSON.stringify({ active: false }) })).status, 400, "can't disable yourself");
 console.log("  ✓ user management: create, validation, role change, disable, self-protection");
+
+{
+// lockout and security events
+await mk({ email: "lock@x.com", name: "Lock Test", role: "rep", password: "right-password-1", emp });
+const bad = (pw: string) => call("/auth/login", { method: "POST", body: JSON.stringify({ email: "lock@x.com", password: pw }) });
+for (let i = 0; i < 5; i++) assert.equal((await bad("wrong")).status, 401);
+assert.equal((await bad("right-password-1")).status, 429, "correct password is refused while the account is locked");
+const ev = (await pool.query("select event, ok, count(*)::int n from auth_events group by 1,2")).rows;
+const n = (e: string, ok: boolean) => ev.find((r) => r.event === e && r.ok === ok)?.n ?? 0;
+assert.ok(n("login", false) >= 5 && n("login_locked", false) >= 1 && n("user_created", true) >= 2 && n("login", true) >= 3, "security events recorded: " + JSON.stringify(ev));
+await assert.rejects(pool.query("delete from auth_events"), /append-only/, "security events can't be erased");
+const { execFileSync } = await import("node:child_process");
+const prod = (env: Record<string, string>) => { try { execFileSync("pnpm", ["exec", "tsx", "-e", "import('./src/config.ts')"], { env: { ...process.env, NODE_ENV: "production", ...env }, stdio: "pipe" }); return "started"; } catch { return "refused"; } };
+assert.equal(prod({ JWT_SECRET: "short", CORS_ORIGIN: "https://a.com" }), "refused", "weak JWT secret refused in production");
+assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "*" }), "refused", "wildcard CORS refused in production");
+assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "https://a.com" }), "started");
+}
+console.log("  ✓ lockout, security events, production config guards");
 
 console.log("Postgres state");
 const row = (await pool.query("select data from records where kind='customers' and id=$1", [custId])).rows[0];

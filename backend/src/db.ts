@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { config } from "./config";
+import { log } from "./log";
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 8 });
 pg.types.setTypeParser(1700, (v) => parseFloat(v)); // numeric → number (money is stored to 2 dp)
@@ -16,7 +17,7 @@ export async function migrate() {
     const c = await pool.connect();
     try {
       await c.query("begin"); await c.query(readFileSync(join(dir, f), "utf8")); await c.query("insert into schema_migrations(name) values ($1)", [f]); await c.query("commit");
-      console.log(`migration applied: ${f}`);
+      log.info("migration_applied", { file: f });
     } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); }
   }
 }

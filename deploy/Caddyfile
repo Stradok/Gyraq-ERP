@@ -1,0 +1,11 @@
+# HTTPS in front of the stack. Caddy gets and renews certificates by itself.
+# Replace the two hostnames, point their DNS at this server, run: caddy run --config Caddyfile
+# In .env set: CORS_ORIGIN=https://erp.customer.com  TRUST_PROXY=1  (and rebuild web with PUBLIC_API_URL=https://api.customer.com)
+erp.customer.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}
+api.customer.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:4000
+}

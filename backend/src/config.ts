@@ -12,4 +12,9 @@ export const config = {
   ownerName: env.OWNER_NAME ?? "Owner",
   ownerPassword: env.OWNER_PASSWORD ?? "",
 };
-if (config.jwtSecret === "dev-only-secret-change-me" && env.NODE_ENV === "production") throw new Error("Set JWT_SECRET before running in production.");
+// Refuse to start in production with unsafe defaults.
+if (env.NODE_ENV === "production") {
+  if (config.jwtSecret === "dev-only-secret-change-me" || config.jwtSecret.length < 32) throw new Error("Set JWT_SECRET to a random string of at least 32 characters (openssl rand -hex 32).");
+  if (config.corsOrigin.includes("*")) throw new Error("Set CORS_ORIGIN to your web address (for example https://erp.customer.com); '*' is not allowed in production.");
+}
+export const trustProxy = env.TRUST_PROXY === "1"; // only behind a reverse proxy that sets X-Forwarded-For itself

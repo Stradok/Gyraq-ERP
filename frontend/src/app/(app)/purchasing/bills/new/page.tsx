@@ -51,7 +51,7 @@ function NewBillInner() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5"><div className="text-xs text-muted-foreground">Supplier</div><Select value={sid} onValueChange={(v) => { setSid(v); setPoId("none"); setRows([]); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{db.suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>
                 <div className="space-y-1.5"><div className="text-xs text-muted-foreground">Purchase order</div><Select value={poId} onValueChange={choosePO}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">No PO (service or direct bill)</SelectItem>{pos.map((p) => <SelectItem key={p.id} value={p.id}>{p.number} · {money(p.total)}</SelectItem>)}</SelectContent></Select></div>
-                <div className="space-y-1.5"><label htmlFor="bno" className="text-xs text-muted-foreground">Supplier's invoice number</label><Input id="bno" value={no} onChange={(e) => setNo(e.target.value)} placeholder="e.g. IB-48250" /></div>
+                <div className="space-y-1.5"><label htmlFor="bno" className="text-xs text-muted-foreground">Supplier&apos;s invoice number</label><Input id="bno" value={no} onChange={(e) => setNo(e.target.value)} placeholder="e.g. IB-48250" /></div>
                 <div className="space-y-1.5"><label htmlFor="bdt" className="text-xs text-muted-foreground">Invoice date</label><Input id="bdt" type="date" value={date} max={db.today} onChange={(e) => setDate(e.target.value)} /></div>
               </div>
             </Section>

@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import { InvoiceExtraction } from "@/lib/ai/extract";
+import { bearer, verifyCaller } from "@/lib/ai/session";
 import { aiEnabled, getModel, modelChain } from "@/lib/ai/provider";
 
 export const maxDuration = 60;
@@ -9,6 +10,7 @@ const OK_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "application/
 const hits = new Map<string, number[]>();
 
 export async function POST(req: Request) {
+  if ((await verifyCaller(bearer(req))) === null) return Response.json({ error: "Sign in again." }, { status: 401 });
   if (!aiEnabled()) return Response.json({ error: "AI provider not configured" }, { status: 503 });
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
   const win = (hits.get(ip) ?? []).filter((t) => Date.now() - t < 60_000); win.push(Date.now()); hits.set(ip, win);

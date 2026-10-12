@@ -33,7 +33,7 @@ function TransferDialog({ open, onOpenChange, wh }: { open: boolean; onOpenChang
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Transfer inventory</DialogTitle><DialogDescription>Moves stock between warehouses at the source's average cost.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Transfer inventory</DialogTitle><DialogDescription>Moves stock between warehouses at the source&apos;s average cost.</DialogDescription></DialogHeader>
         <div className="space-y-3 text-[13px]">
           <div className="grid grid-cols-2 gap-3">{([["From", from, setFrom], ["To", to, setTo]] as const).map(([l, v, set]) => <div key={l} className="space-y-1.5"><div className="text-xs text-muted-foreground">{l}</div><Select value={v} onValueChange={set}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{db.warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.code}</SelectItem>)}</SelectContent></Select></div>)}</div>
           <div className="space-y-1.5"><div className="text-xs text-muted-foreground">Product</div><ProductPicker value={pid} onChange={setPid} /></div>
