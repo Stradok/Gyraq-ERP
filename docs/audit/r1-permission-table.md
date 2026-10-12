@@ -1,4 +1,6 @@
-# R1 permission table (proposal, needs your approval)
+# R1 permission table (approved and implemented)
+
+Implemented in `frontend/src/lib/engine/permissions.ts` (table), `backend/src/scope.ts` (record-level rules), `backend/src/server.ts` (enforcement). Segregation of duties already existed in the engine (`approvals.ts`, code `APR_SOD`) and is now covered by a backend test. Known limit: the scope check reads state just before the command is queued, so a customer reassigned in that instant could slip one command through.
 
 Covers all 50 commands in `frontend/src/lib/engine/commands.ts`. Default-deny: the API will refuse any command not listed here. Roles: owner, admin, finance, sales_manager, rep, warehouse, procurement, employee. **Owner and Admin can always do what a listed role can; "(same)" means the roles named in the row above.**
 

@@ -85,7 +85,7 @@ function Journal() {
   ], [db]);
   return (
     <>
-      <PageHeader module="finance" title="Finance" description="Immutable double-entry journal. Every document posts balanced entries; manual entries are rare and guarded." actions={<Button size="sm" onClick={() => setOpen(true)}><Plus />New journal entry</Button>} />
+      <PageHeader module="finance" title="Finance" description="Immutable double-entry journal. Every document posts balanced entries; manual entries are rare and guarded." actions={can(role, "journal.post") && <Button size="sm" onClick={() => setOpen(true)}><Plus />New journal entry</Button>} />
       <NewJE open={open} onOpenChange={setOpen} />
       <Sheet open={!!sel} onOpenChange={(o) => !o && setSel(null)}>
         <SheetContent className="w-full sm:max-w-[560px]">{sel && <><SheetHeader><SheetTitle><Mono className="text-base">{sel.number}</Mono></SheetTitle><SheetDescription>{sel.memo} · {dateLong(sel.date)} · source {sel.source} · {sel.type}</SheetDescription></SheetHeader>

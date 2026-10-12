@@ -8,15 +8,9 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { config, trustProxy } from "./config";
 import { log } from "./log";
 import { migrate, pool } from "./db";
-import { HANDLERS, PERSONAS, can, type Action, type CommandType, type Role } from "./engine";
+import { COMMAND_PERMISSIONS, HANDLERS, PERSONAS, can, type CommandType, type Role } from "./engine";
+import { enforceScope } from "./scope";
 import { boot, commandsSince, mode, submit, world } from "./world";
-
-// Which permission each command needs. The engine also validates its own rules; this is the role boundary the browser UI only hints at.
-const NEEDS: Partial<Record<CommandType, Action>> = {
-  CreateOrder: "order.create", RecordPayment: "payment.record", CreatePO: "po.create", ReceiveGoods: "po.receive", PickOrder: "warehouse.ops", DispatchOrder: "warehouse.ops", PostCount: "warehouse.ops", TransferStock: "warehouse.ops",
-  CreateCustomer: "master.create", CreateSupplier: "master.create", CreateProduct: "master.create", CreateLead: "master.create", AdjustStock: "stock.adjust", CreateBill: "bill.create", PaySupplier: "supplier.pay", CreateReturn: "return.create",
-  ClosePeriod: "period.close", ReopenPeriod: "period.close", UpdateSettings: "period.close", CreateEmployee: "hr.manage", UpdateEmployee: "hr.manage", RunPayroll: "hr.manage",
-};
 
 type Env = { Variables: { session: Session; rid: string } };
 const app = new Hono<Env>();
@@ -136,10 +130,13 @@ app.post("/api/commands", async (c) => {
   if (b.id !== undefined && !/^[\w-]{6,64}$/.test(b.id)) return c.json({ ok: false, error: { code: "BAD_ID", title: "Bad command id", detail: "", recovery: "Refresh the page." } }, 400);
   if (!b.type || !(b.type in HANDLERS)) return c.json({ ok: false, error: { code: "CMD_UNKNOWN", title: "Unknown action", detail: `No such command: ${b.type}`, recovery: "Refresh the page." } }, 400);
   const type = b.type as CommandType;
-  const need = NEEDS[type];
-  if (need && !can(s.role, need)) return c.json({ ok: false, error: { code: "FORBIDDEN", title: "Your role can't do this", detail: `${s.role.replace("_", " ")} is not allowed to ${type}.`, recovery: "Ask someone with access, such as the Owner." } }, 403);
+  // Default-deny: a command with no entry in COMMAND_PERMISSIONS (frontend/src/lib/engine/permissions.ts) is refused.
+  const rule = COMMAND_PERMISSIONS[type];
+  if (!rule || !can(s.role, rule.permission)) return c.json({ ok: false, error: { code: "FORBIDDEN", title: "Your role can't do this", detail: `${s.role.replace("_", " ")} is not allowed to ${type}.`, recovery: "Ask someone with access, such as the Owner." } }, 403);
   if (b.source === "ai_proposal" && !can(s.role, "ai.confirm")) return c.json({ ok: false, error: { code: "FORBIDDEN", title: "Your role can't confirm AI proposals", detail: "", recovery: "Ask the Owner." } }, 403);
-  const out = await submit({ name: s.name, role: s.role }, type, b.payload ?? {}, b.source === "ai_proposal" ? "ai_proposal" : "user", { id: b.id, at: b.at, baseSeq: b.baseSeq });
+  const scoped = enforceScope(world, { name: s.name, role: s.role, emp: s.emp }, type, b.payload);
+  if (!scoped.ok) return c.json({ ok: false, error: { code: scoped.code, title: scoped.title, detail: scoped.detail, recovery: "Ask the Owner if this should be allowed." } }, 403);
+  const out = await submit({ name: s.name, role: s.role }, type, scoped.payload, b.source === "ai_proposal" ? "ai_proposal" : "user", { id: b.id, at: b.at, baseSeq: b.baseSeq });
   return c.json(out, out.ok ? 200 : ((out.status ?? 422) as 409 | 422));
 });
 

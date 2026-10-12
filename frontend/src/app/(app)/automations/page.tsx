@@ -1,4 +1,5 @@
 "use client";
+import { can } from "@/lib/rbac";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -66,7 +67,7 @@ export default function Automations() {
   const role = useERP((s) => s.role);
   const [open, setOpen] = useState(false);
   const rules = getDB().rules;
-  const canEdit = role === "owner" || role === "admin" || role === "finance";
+  const canEdit = can(role, "setup.manage");
   return (
     <>
       <PageHeader title="Automations" description="WHEN a business event happens, IF a condition holds, THEN run a safe action. Rules never change financial records directly." actions={canEdit && <Button size="sm" onClick={() => setOpen(true)}><Plus />New rule</Button>} />

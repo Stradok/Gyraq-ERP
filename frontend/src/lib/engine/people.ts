@@ -6,6 +6,7 @@ import { assertPostable, audit, fail, money, newId, nextNo, notify, ok, postJE, 
 
 export function submitExpense(ctx: Ctx, p: { employeeId: string; category: string; merchant: string; amount: number; purpose: string; date: string; hasReceipt: boolean }): Result<{ id: string }> {
   const db = ctx.db;
+  if (!ctx.db.employees.some((e) => e.id === p.employeeId)) return fail("EMP_NOT_FOUND", "Employee not found", "The expense must be filed for an employee on record.", "Pick an employee, or ask HR to add them first.");
   if (!(p.amount > 0)) return fail("EXP_AMOUNT", "Enter an amount", "Expenses must be above zero.", "Type the total on the receipt.");
   if (p.merchant.trim().length < 2 || p.purpose.trim().length < 4) return fail("EXP_FIELDS", "Add merchant and purpose", "Finance needs both to approve.", "For example: Petro Plus, route visit.");
   if (p.date > ctx.date) return fail("EXP_DATE", "Date is in the future", "Expenses can't be dated after today.", "Use the receipt date.");
@@ -24,6 +25,7 @@ export function submitExpense(ctx: Ctx, p: { employeeId: string; category: strin
 }
 
 export function submitLeave(ctx: Ctx, p: { employeeId: string; type: LeaveRequest["type"]; from: string; to: string; reason: string }): Result<{ id: string }> {
+  if (!ctx.db.employees.some((e) => e.id === p.employeeId)) return fail("EMP_NOT_FOUND", "Employee not found", "Leave must be filed for an employee on record.", "Pick an employee, or ask HR to add them first.");
   if (p.to < p.from) return fail("LV_DATES", "End date is before start", "Check the dates.", "Pick a start date and a later end date.");
   const days = diffDays(p.to, p.from) + 1;
   const l: LeaveRequest = { id: newId("lv"), employeeId: p.employeeId, type: p.type, from: p.from, to: p.to, days, status: "pending", reason: p.reason || "Personal" };

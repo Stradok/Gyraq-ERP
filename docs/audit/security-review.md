@@ -4,9 +4,9 @@ Method: code reading plus a programmatic comparison of the 50 command handlers a
 
 | ID | Sev | Finding |
 |---|---|---|
-| S-1 | High | AI chat trusts a client-supplied role |
-| S-2 | High | 28 of 50 commands have no API-layer permission check |
-| S-3 | High | Payload identity is not bound to the signed-in user (IDOR) |
+| S-1 | High | AI chat trusts a client-supplied role (fixed R0) |
+| S-2 | High | 28 of 50 commands have no API-layer permission check (fixed R1) |
+| S-3 | High | Payload identity is not bound to the signed-in user (IDOR) (fixed R1) |
 | S-4 | High | History is recomputed by current code (integrity, see A-1) |
 | S-5 | Medium | Tokens and full company data stored unencrypted in `localStorage` |
 | S-6 | Medium | Login throttle is bypassable; weak credential policy |
@@ -21,12 +21,14 @@ Method: code reading plus a programmatic comparison of the 50 command handlers a
 `frontend/src/app/api/chat/route.ts:26` reads `role`, `user` and `commands` from the request body; line 32 passes `body.role` to `runTool(name, args, body.role)` (the gate in `lib/ai/tools.ts` `TOOL_ROLES`), and line 38 puts it in the system prompt. In remote mode the world is built from the caller's token (`makeRemoteWorld`), which contains the whole company's data; the role gate is then the only thing keeping a Warehouse user away from finance figures, and the caller can simply send `"role":"owner"`. `/api/chat` and `/api/extract` also work without any session in demo mode (acceptable for the public demo, not for remote mode).
 *Fix:* in remote mode, ignore body role, fetch `/api/me` with the token server-side and use that role; reject calls with no valid token.
 
-## S-2 Missing API-layer authorization (High)
+## S-2 Missing API-layer authorization (High) — FIXED in R1
+All 50 commands now have an entry in `frontend/src/lib/engine/permissions.ts` (a `Record<CommandType, …>`, so a new command without a permission does not compile); the API refuses anything not listed. `backend/tests/api.test.ts` runs every command against every role (400 combinations). Original finding:
 `backend/src/server.ts` `NEEDS` maps 22 commands to a permission. These 28 commands have **no** API-level check: `BounceCheque, CancelOrder, ClearCheque, ConfirmBankMatch, ConfirmOrder, CreateQuote, CreateRule, CreateWarehouse, DecideApproval, DepositCash, DepositCheque, MarkDelivered, MoveLead, PostManualJE, PostOpeningCash, PostOpeningStock, QueueMessage, ReleaseCreditHold, RequestCreditHold, RequestCreditLimit, RequestCreditOverride, ResolveBill, SetClaimStatus, SetQuoteStatus, SetRule, SetupCompany, SubmitExpense, SubmitLeave`.
 Some are protected inside the engine (`SetupCompany`, `CreateWarehouse`, opening balances via `setup.ts denied()`; `DecideApproval` via `approvals.ts canDecide`; `ClosePeriod` via `finance.ts`). Others are not: any signed-in user (including `employee` and `rep`) can call `PostManualJE` (finance.ts; only large entries route to approval), `ClearCheque`/`BounceCheque`/`DepositCash` (cash movements), `ConfirmBankMatch`, `CreateRule`/`SetRule` (automation rules), `ResolveBill`, `ReleaseCreditHold`, `QueueMessage`, `CancelOrder`.
 *Fix:* default-deny. Every command declares its required permission in one registry; the API refuses any command without one. (Permission changes need your approval.)
 
-## S-3 Identity not bound to payload (High, IDOR)
+## S-3 Identity not bound to payload (High, IDOR) — FIXED in R1
+`backend/src/scope.ts` rewrites `employeeId` to the signed-in user's employee for leave and expenses (HR roles may file for others), forces `requestedBy` for credit requests, and limits reps to their own customers and leads. Original finding:
 `people.ts`: `submitLeave(ctx, {employeeId,…})` and `submitExpense(ctx, {employeeId,…})` use the payload's `employeeId`; nothing checks that it is the caller's employee (`users.emp_name`) unless the caller has an HR role. Any user can file leave or expenses for anyone, which then generates approvals "requested by" that person. Similar data-scoping gaps: reps are restricted to their customers only in the UI (`sales/orders/new/page.tsx`, `customers/page.tsx` filter by `repId`); the server does not enforce "own records" for `rep`. `rbac.ts` itself says: "UI hiding is UX only; the real boundary will be server-side" — that boundary is only partly built.
 
 ## S-4 Recompute-on-boot integrity risk (High)

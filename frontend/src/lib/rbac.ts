@@ -30,7 +30,7 @@ export const ROLE_MODULES: Record<Role, Module[]> = {
 };
 export const canSee = (r: Role, m: Module) => ROLE_MODULES[r].includes(m);
 
-export type Action = "warehouse.ops" | "po.receive" | "master.create" | "stock.adjust" | "bill.create" | "supplier.pay" | "return.create" | "approve.po" | "approve.finance" | "approve.credit" | "approve.expense" | "ai.confirm" | "po.create" | "payment.record" | "order.create" | "period.close" | "hr.manage" | "setup.manage";
+export type Action = "warehouse.ops" | "po.receive" | "master.create" | "stock.adjust" | "bill.create" | "supplier.pay" | "return.create" | "approve.po" | "approve.finance" | "approve.credit" | "approve.expense" | "ai.confirm" | "po.create" | "payment.record" | "order.create" | "period.close" | "hr.manage" | "setup.manage" | "lead.manage" | "cash.manage" | "journal.post" | "period.reopen" | "settings.manage" | "message.send" | "self.requests" | "approvals.decide";
 const ACTIONS: Record<Action, Role[]> = {
   "warehouse.ops": ["owner", "admin", "warehouse", "sales_manager"],
   "po.receive": ["owner", "admin", "warehouse", "procurement"],
@@ -50,11 +50,19 @@ const ACTIONS: Record<Action, Role[]> = {
   "period.close": ["owner", "finance"],
   "hr.manage": ["owner", "admin", "finance"],
   "setup.manage": ["owner", "admin"],
+  "lead.manage": ["owner", "admin", "sales_manager", "rep"],
+  "cash.manage": ["owner", "admin", "finance"],
+  "journal.post": ["owner", "finance"],
+  "period.reopen": ["owner"],
+  "settings.manage": ["owner", "admin"],
+  "message.send": ["owner", "admin", "finance", "sales_manager"],
+  "self.requests": ["owner", "admin", "finance", "sales_manager", "rep", "warehouse", "procurement", "employee"],
+  "approvals.decide": ["owner", "admin", "finance", "sales_manager", "warehouse", "procurement"], // which approval types each may decide is checked per type in the engine (approvals.ts canDecide)
 };
 export const can = (r: Role, a: Action) => ACTIONS[a].includes(r);
 
 const MODULE_LABEL: Record<Module, string> = { overview: "Overview", sales: "Sales", customers: "Customers", inventory: "Inventory", warehouses: "Warehouses", purchasing: "Purchasing", suppliers: "Suppliers", finance: "Finance", expenses: "Expenses", employees: "Employees", reports: "Reports", ai: "AI Command Center", automations: "Automations", integrations: "Integrations", settings: "Settings", approvals: "Approvals" };
-const ACTION_LABEL: Record<Action, string> = { "warehouse.ops": "pick, dispatch and count stock", "po.receive": "receive goods", "master.create": "create customers, suppliers, products and leads", "stock.adjust": "adjust stock", "bill.create": "enter supplier bills", "supplier.pay": "pay suppliers", "return.create": "create returns", "approve.po": "approve purchase orders", "approve.finance": "approve finance items (journals, bill variances, adjustments)", "approve.credit": "approve credit limits and overrides", "approve.expense": "approve expenses", "ai.confirm": "confirm AI proposals", "po.create": "create purchase orders", "payment.record": "record customer payments", "order.create": "create sales orders", "period.close": "close accounting periods", "hr.manage": "add and edit employees and run payroll", "setup.manage": "set up the company, warehouses and opening balances" };
+const ACTION_LABEL: Record<Action, string> = { "warehouse.ops": "pick, dispatch and count stock", "po.receive": "receive goods", "master.create": "create customers, suppliers, products and leads", "stock.adjust": "adjust stock", "bill.create": "enter supplier bills", "supplier.pay": "pay suppliers", "return.create": "create returns", "approve.po": "approve purchase orders", "approve.finance": "approve finance items (journals, bill variances, adjustments)", "approve.credit": "approve credit limits and overrides", "approve.expense": "approve expenses", "ai.confirm": "confirm AI proposals", "po.create": "create purchase orders", "payment.record": "record customer payments", "order.create": "create sales orders", "period.close": "close accounting periods", "hr.manage": "add and edit employees and run payroll", "setup.manage": "set up the company, warehouses and opening balances", "lead.manage": "manage sales leads", "cash.manage": "deposit, clear and bounce cheques, deposit cash and match bank lines", "journal.post": "post manual journal entries", "period.reopen": "reopen a closed accounting period", "settings.manage": "change policy limits and tax rates", "message.send": "send customer messages", "self.requests": "request leave and submit expenses for yourself", "approvals.decide": "decide approvals" };
 
 /** Plain-text access summary for the AI assistant. The owner is the top role and can do everything. */
 export function describeAccess(role: Role): string {

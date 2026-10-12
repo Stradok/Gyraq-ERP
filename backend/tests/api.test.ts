@@ -135,5 +135,54 @@ assert.equal(w2.orders.find((o) => o.customerId === custId)?.id, ordRow.data.id,
 const since = (await call("/api/commands?since=1", { token: rep })).body.commands; assert.equal(since.length, 2, "sync since cursor");
 console.log("  ✓ restart rebuilds identical state; sync cursor");
 
+console.log("Permissions (R1)");
+{
+  const { issue, pwVersion } = await import("../src/auth");
+  const { COMMAND_PERMISSIONS, can } = await import("../src/engine");
+  const tokenFor = async (email: string) => { const u = (await pool.query("select * from users where email=$1", [email])).rows[0]; return issue({ sub: u.id, email: u.email, name: u.name, role: u.role, emp: u.emp_name, pv: pwVersion(u.pw_hash) }); };
+  const ROLE_EMAIL: Record<string, string> = { owner: "owner@meridian.demo", admin: "admin@meridian.demo", finance: "finance@meridian.demo", sales_manager: "sales.manager@meridian.demo", rep: "rep.karachi@meridian.demo", warehouse: "warehouse.khi@meridian.demo", procurement: "procurement@meridian.demo", employee: "employee@meridian.demo" };
+  const toks: Record<string, string> = {}; for (const [r, e] of Object.entries(ROLE_EMAIL)) toks[r] = await tokenFor(e);
+  // 1. every command against every role: allowed exactly when the registry says so
+  let checked = 0;
+  for (const [type, rule] of Object.entries(COMMAND_PERMISSIONS)) for (const role of Object.keys(ROLE_EMAIL)) {
+    const res = await cmd(toks[role]!, type, {});
+    const allowed = can(role as never, rule.permission);
+    if (allowed) assert.notEqual(res.body?.error?.code === "FORBIDDEN" ? 403 : res.status, 403, `${role} should be allowed ${type}: ${JSON.stringify(res.body?.error)}`);
+    else { assert.equal(res.status, 403, `${role} must not run ${type}`); assert.equal(res.body.error.code, "FORBIDDEN"); }
+    checked++;
+  }
+  assert.equal(checked, Object.keys(COMMAND_PERMISSIONS).length * 8);
+  console.log(`  ✓ ${checked} command × role combinations match the permission table`);
+
+  // 2. scope: a rep only works their own customers and leads
+  const w = W.world, usman = w.employees.find((e) => e.name === "Usman Ghani")!;
+  const mine = w.customers.find((c) => c.repId === usman.id)!, theirs = w.customers.find((c) => c.repId !== usman.id)!;
+  const order = (customerId: string) => ({ customerId, lines: [{ productId: w.products[0]!.id, cartons: 1, discPct: 0 }], mode: "draft" });
+  const bad = await cmd(toks.rep!, "CreateOrder", order(theirs.id)); assert.equal(bad.status, 403); assert.equal(bad.body.error.code, "SCOPE");
+  assert.notEqual((await cmd(toks.rep!, "CreateOrder", order(mine.id))).status, 403, "own customer allowed");
+  assert.equal((await cmd(toks.rep!, "RecordPayment", { customerId: theirs.id, amount: 1000, method: "cash" })).body.error.code, "SCOPE", "payments too");
+  const lead = await cmd(toks.rep!, "CreateLead", { company: "Scope Traders", contact: "x", city: "Karachi", source: "web", repId: "someone-else", value: 1, probability: 10 });
+  assert.equal(lead.status, 200, JSON.stringify(lead.body)); assert.equal(W.world.leads.find((l) => l.id === lead.body.value.id)!.repId, usman.id, "a rep's lead is always assigned to them");
+  console.log("  ✓ rep scope: own customers and leads only");
+
+  // 3. self: leave and expenses are always filed for the signed-in user
+  const kashif = w.employees.find((e) => e.name === "Kashif Raza")!, other = w.employees.find((e) => e.name !== "Kashif Raza")!;
+  const lv = await cmd(toks.employee!, "SubmitLeave", { employeeId: other.id, type: "Annual", from: w.today, to: w.today, reason: "scope test" });
+  assert.equal(lv.status, 200, JSON.stringify(lv.body));
+  assert.equal(W.world.leaves.find((l) => l.id === lv.body.value.id)!.employeeId, kashif.id, "filed for the caller, not for the employee named in the request");
+  const hrLv = await cmd(toks.finance!, "SubmitLeave", { employeeId: other.id, type: "Annual", from: w.today, to: w.today, reason: "hr files for someone" });
+  assert.equal(W.world.leaves.find((l) => l.id === hrLv.body.value.id)!.employeeId, other.id, "HR roles may file for others");
+  console.log("  ✓ leave and expenses are filed for the signed-in user");
+
+  // 4. nobody approves their own request
+  const ayesha = w.employees.find((e) => e.name === "Ayesha Siddiqui")!;
+  const ex = await cmd(toks.finance!, "SubmitExpense", { employeeId: ayesha.id, category: "Fuel", merchant: "Petro Plus", amount: 90_000, purpose: "route visit test", date: w.today, hasReceipt: true });
+  assert.equal(ex.status, 200, JSON.stringify(ex.body));
+  const apr = W.world.approvals.find((a) => a.ref === ex.body.value.id && a.status === "pending")!;
+  const self = await cmd(toks.finance!, "DecideApproval", { id: apr.id, decision: "approved" });
+  assert.equal(self.body.error?.code, "APR_SOD", "own request can't be approved by its requester");
+  console.log("  ✓ no self-approval");
+}
+
 console.log("\nAll backend checks passed.");
 srv.close(); await pool.end(); process.exit(0);
