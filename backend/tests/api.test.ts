@@ -16,7 +16,8 @@ const W = await import("../src/world");
 const srv = await start();
 const A = "http://localhost:4101";
 const call = async (path: string, init: RequestInit & { token?: string } = {}) => {
-  const r = await fetch(A + path, { ...init, headers: { "content-type": "application/json", ...(init.token ? { authorization: `Bearer ${init.token}` } : {}) } });
+  const send = () => fetch(A + path, { ...init, headers: { "content-type": "application/json", ...(init.token ? { authorization: `Bearer ${init.token}` } : {}) } });
+  const r = await send().catch(() => send()); // a connection the server closed on purpose (413) may be reused once
   return { status: r.status, body: (await r.json()) as any };
 };
 const login = async (email: string) => (await call("/auth/login", { method: "POST", body: JSON.stringify({ email, password: "test-pass-123" }) })).body.token as string;
@@ -87,7 +88,8 @@ const { execFileSync } = await import("node:child_process");
 const prod = (env: Record<string, string>) => { try { execFileSync("pnpm", ["exec", "tsx", "-e", "import('./src/config.ts')"], { env: { ...process.env, NODE_ENV: "production", ...env }, stdio: "pipe" }); return "started"; } catch { return "refused"; } };
 assert.equal(prod({ JWT_SECRET: "short", CORS_ORIGIN: "https://a.com" }), "refused", "weak JWT secret refused in production");
 assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "*" }), "refused", "wildcard CORS refused in production");
-assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "https://a.com" }), "started");
+assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "https://a.com", DEMO_PASSWORD: "meridian-demo" }), "refused", "public demo password refused in production");
+assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "https://a.com", DEMO_PASSWORD: "a-private-demo-password" }), "started");
 }
 { // parallel guessing cannot exceed the limit
   await mk({ email: "race@x.com", name: "Race Test", role: "rep", password: "right-password-1", emp });
@@ -97,6 +99,17 @@ assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "https://a.com" }),
   assert.equal(rs.filter((r) => r.status === 401).length, fails, "every evaluated guess was refused"); assert.equal(rs.filter((r) => r.status === 429).length, 12 - fails, "the rest were turned away at once");
 }
 { const r = await fetch(A + "/health", { headers: { "x-request-id": "bad id \"forged\" {json}" } }); assert.notEqual(r.headers.get("x-request-id"), "bad id \"forged\" {json}", "junk request id replaced"); }
+{ // a password change ends older sessions; input sizes are bounded
+  const oldTok = await login("finance@meridian.demo");
+  assert.equal((await call("/api/me", { token: oldTok })).status, 200);
+  const fid = (await call("/api/me", { token: oldTok })).body.sub;
+  assert.equal((await call(`/api/users/${fid}`, { method: "PATCH", token: owner, body: JSON.stringify({ password: "a-brand-new-password" }) })).status, 200);
+  assert.equal((await call("/api/me", { token: oldTok })).status, 401, "old token dies when the password is reset");
+  assert.equal((await mk({ email: "long@x.com", name: "Long Pw", role: "rep", password: "p".repeat(129), emp })).status, 400, "huge passwords refused");
+  assert.equal((await call("/auth/login", { method: "POST", body: JSON.stringify({ email: "a@b.com", password: "x".repeat(300) }) })).status, 401);
+  const big = await call("/api/commands", { method: "POST", token: owner, body: JSON.stringify({ type: "CreateLead", payload: { pad: "x".repeat(1_200_000) } }) }).then((r) => r.status, () => 413); // the server may close the connection while we are still sending
+  assert.equal(big, 413, "oversized body refused");
+}
 console.log("  ✓ lockout, security events, production config guards");
 
 console.log("Postgres state");

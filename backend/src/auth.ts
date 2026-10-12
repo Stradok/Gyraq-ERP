@@ -1,9 +1,11 @@
-import { createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { config } from "./config";
 import type { Role } from "./engine";
 
-export interface Session { sub: string; email: string; name: string; role: Role; emp: string; exp: number }
+export interface Session { sub: string; email: string; name: string; role: Role; emp: string; pv: string; exp: number }
+/** Fingerprint of the current password hash. Stored in every token, so changing a password ends all older sessions at once. */
+export const pwVersion = (pwHash: string) => createHash("sha256").update(pwHash).digest("hex").slice(0, 16);
 
 // Async scrypt: the hashing runs on the thread pool, so a flood of sign-in attempts cannot freeze the whole server.
 const scryptAsync = promisify(scrypt) as (pw: string, salt: string, len: number) => Promise<Buffer>;
@@ -30,8 +32,9 @@ export function verify(token: string): Session | null {
   return claims.exp > Date.now() / 1000 ? claims : null;
 }
 
-// Login throttle: 10 tries per 5 minutes per address+email. In-memory is enough for a single self-hosted instance.
+// Login throttle. In-memory is enough for a single self-hosted instance. Idle keys are dropped so unique emails can't grow it forever.
 const tries = new Map<string, number[]>();
+setInterval(() => { const now = Date.now(); for (const [k, w] of tries) if (!w.length || now - w[w.length - 1]! > 600_000) tries.delete(k); }, 300_000).unref();
 /** Sliding window: more than `max` calls with the same key in `ms`. */
 export function throttled(key: string, max = 10, ms = 300_000): boolean {
   const now = Date.now(), w = (tries.get(key) ?? []).filter((t) => now - t < ms); w.push(now); tries.set(key, w); return w.length > max;

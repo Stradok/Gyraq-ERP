@@ -2,7 +2,8 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Context } from "hono";
-import { hashPassword, issue, throttled, verify, verifyPassword, type Session } from "./auth";
+import { hashPassword, issue, pwVersion, throttled, verify, verifyPassword, type Session } from "./auth";
+import { bodyLimit } from "hono/body-limit";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { config, trustProxy } from "./config";
 import { log } from "./log";
@@ -21,6 +22,7 @@ type Env = { Variables: { session: Session; rid: string } };
 const app = new Hono<Env>();
 app.use("*", cors({ origin: config.corsOrigin.includes("*") ? "*" : config.corsOrigin, allowHeaders: ["authorization", "content-type"] }));
 
+app.use("*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "Request too large." }, 413) }));
 app.use("*", async (c, next) => {
   const given = c.req.header("x-request-id"), rid = given && /^[\w-]{8,64}$/.test(given) ? given : crypto.randomUUID(), t0 = Date.now(); // a caller-chosen id is kept only if it is a plain token, so logs cannot be forged with newlines or junk
   c.set("rid", rid); c.header("x-request-id", rid);
@@ -37,6 +39,7 @@ app.get("/health", async (c) => { await pool.query("select 1"); return c.json({ 
 app.post("/auth/login", async (c) => {
   const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({} as { email?: string; password?: string }));
   if (!email || !password) return c.json({ error: "Enter your email and password." }, 400);
+  if (email.length > 254 || password.length > 256) return c.json({ error: "Wrong email or password." }, 401); // bounded work per attempt
   if (throttled(`${clientIp(c)}|${email.toLowerCase()}`) || throttled(`ip:${clientIp(c)}`, 30)) return c.json({ error: "Too many attempts. Wait a few minutes." }, 429);
   // Lockout, per account and per client address: 5 failed sign-ins from one address in 15 minutes locks that address out of that
   // account, so a stranger cannot lock the real owner out from elsewhere. 50 failures from anywhere also lock the account for the
@@ -63,7 +66,7 @@ app.post("/auth/login", async (c) => {
   if (busy) return c.json({ error: "Another sign-in for this account is in progress. Try again in a moment." }, 429);
   if (locked) return c.json({ error: "Too many failed attempts. Try again in 15 minutes." }, 429);
   if (!good || !u) return c.json({ error: "Wrong email or password." }, 401);
-  const s = { sub: u.id as string, email: u.email as string, name: u.name as string, role: u.role as Role, emp: u.emp_name as string };
+  const s = { sub: u.id as string, email: u.email as string, name: u.name as string, role: u.role as Role, emp: u.emp_name as string, pv: pwVersion(u.pw_hash as string) };
   return c.json({ token: issue(s), user: { id: s.sub, email: s.email, name: s.name, title: u.title, role: s.role, emp: s.emp } });
 });
 
@@ -72,8 +75,9 @@ const guard = async (c: Context<Env>, next: () => Promise<void>) => {
   const s = t ? verify(t) : null;
   if (!s) return c.json({ error: "Sign in again." }, 401);
   // Role and active flag come from the database each time, so a change or deactivation takes effect at once.
-  const u = (await pool.query("select role, active from users where id=$1", [s.sub])).rows[0];
+  const u = (await pool.query("select role, active, pw_hash from users where id=$1", [s.sub])).rows[0];
   if (!u?.active) return c.json({ error: "This account is disabled." }, 401);
+  if (s.pv !== pwVersion(u.pw_hash)) return c.json({ error: "Your password changed. Sign in again." }, 401);
   c.set("session", { ...s, role: u.role }); await next();
 };
 app.use("/api/*", guard);
@@ -93,10 +97,11 @@ app.post("/api/users", async (c) => {
   const b = await c.req.json<{ email?: string; name?: string; title?: string; role?: string; password?: string; emp?: string }>().catch(() => ({} as Record<string, string>));
   const email = (b.email ?? "").trim().toLowerCase(), name = (b.name ?? "").trim();
   if (!/^\S+@\S+\.\S+$/.test(email)) return c.json({ error: "Enter a valid email." }, 400);
+  if (email.length > 254 || name.length > 100 || (b.title ?? "").length > 100 || (b.emp ?? "").length > 100) return c.json({ error: "Name, title or email is too long." }, 400);
   if (name.length < 3) return c.json({ error: "Enter the person's full name." }, 400);
   if (!b.role || !ROLES.includes(b.role)) return c.json({ error: "Pick a role." }, 400);
   if (b.role === "owner" && c.get("session").role !== "owner") return c.json({ error: "Only an Owner can create another Owner." }, 403);
-  if ((b.password ?? "").length < 8) return c.json({ error: "Password must be at least 8 characters." }, 400);
+  if ((b.password ?? "").length < 8 || (b.password ?? "").length > 128) return c.json({ error: "Password must be 8 to 128 characters." }, 400);
   const emp = b.emp || name; // the employee record this person acts as (leave, expenses); may be added later
   if ((await pool.query("select 1 from users where lower(email)=$1", [email])).rowCount) return c.json({ error: "A user with this email already exists." }, 409);
   const r = await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6) returning id", [email, name, b.title ?? "", b.role, emp, await hashPassword(b.password!)]);
@@ -112,7 +117,8 @@ app.patch("/api/users/:id", async (c) => {
   if ((target.role === "owner" || b.role === "owner") && s.role !== "owner") return c.json({ error: "Only an Owner can change an Owner." }, 403);
   if (id === s.sub && (b.active === false || (b.role && b.role !== s.role))) return c.json({ error: "You can't disable or change the role of your own account." }, 400);
   if (b.role && !ROLES.includes(b.role)) return c.json({ error: "Unknown role." }, 400);
-  if (b.password !== undefined && b.password.length < 8) return c.json({ error: "Password must be at least 8 characters." }, 400);
+  if (b.password !== undefined && (b.password.length < 8 || b.password.length > 128)) return c.json({ error: "Password must be 8 to 128 characters." }, 400);
+  if (b.title !== undefined && b.title.length > 100) return c.json({ error: "Title is too long." }, 400);
   const demotes = (target.role === "owner" && ((b.role && b.role !== "owner") || b.active === false));
   if (demotes && (await pool.query("select count(*)::int n from users where role='owner' and active")).rows[0].n < 2) return c.json({ error: "There must always be at least one active Owner." }, 400);
   await pool.query("update users set role=coalesce($2,role), active=coalesce($3,active), title=coalesce($4,title), pw_hash=coalesce($5,pw_hash) where id=$1", [id, b.role ?? null, b.active ?? null, b.title ?? null, b.password ? await hashPassword(b.password) : null]);
@@ -152,6 +158,7 @@ async function seedUsers() {
 }
 
 export async function start() {
+  if (process.env.NODE_ENV === "production" && !trustProxy) log.warn("trust_proxy_off", { hint: "behind a reverse proxy every client shares its address, so one person's failed sign-ins lock others out. Set TRUST_PROXY=1 when a proxy is in front." });
   await migrate(); await boot(); await seedUsers();
   const srv = serve({ fetch: app.fetch, port: config.port });
   log.info("listening", { port: config.port, mode });
