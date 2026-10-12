@@ -170,6 +170,8 @@ console.log("Permissions (R1)");
     assert.equal(sneaky.body.error.code, "SCOPE", `${type}: another rep's order refused even with an own customerId`);
     assert.equal((await cmd(toks.rep!, type, { orderId: "no-such-order" })).body.error.code, "SCOPE", `${type}: unknown order refused`);
   }
+  const own = w.orders.find((o) => w.customers.find((c) => c.id === o.customerId)?.repId === usman.id);
+  if (own) assert.equal((await cmd(toks.rep!, "ConfirmOrder", { orderId: own.id, customerId: theirs.id })).body.error.code, "SCOPE", "a foreign customer named in any field is refused");
   assert.equal((await cmd(toks.rep!, "SetQuoteStatus", { id: "no-such-quote", status: "sent" })).body.error.code, "SCOPE");
   assert.equal((await cmd(toks.rep!, "MoveLead", { id: "no-such-lead", stage: "won" })).body.error.code, "SCOPE");
   assert.equal((await cmd(toks.rep!, "CreateOrder", {})).body.error.code, "SCOPE", "no customer named: refused");

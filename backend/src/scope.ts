@@ -40,6 +40,10 @@ export function enforceScope(db: DB, who: Caller, type: CommandType, raw: unknow
       : (payload.customerId as string | undefined);
     const c = db.customers.find((x) => x.id === customerId);
     if (c?.repId !== me.id) return no("SCOPE", "This customer isn't yours", "Order bookers can only work with customers assigned to them."); // unresolvable: refused
+    // Defence in depth: every record the request names must be theirs, not just the one this gate reads. If a handler ever
+    // reads a different field than the gate does, a harmless value in one field can no longer hide a foreign record in another.
+    const named = [db.customers.find((x) => x.id === payload.customerId), db.orders.find((o) => o.id === payload.orderId)?.customerId && db.customers.find((x) => x.id === db.orders.find((o) => o.id === payload.orderId)?.customerId), db.quotes.find((q) => q.id === payload.id)?.customerId && db.customers.find((x) => x.id === db.quotes.find((q) => q.id === payload.id)?.customerId)];
+    if (named.some((n) => n && n.repId !== me.id)) return no("SCOPE", "This request refers to a customer who isn't yours", "Order bookers can only work with customers assigned to them.");
     if (type === "RequestCreditLimit") payload.requestedBy = who.name;
   }
   return { ok: true, payload };
