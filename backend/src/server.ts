@@ -7,7 +7,7 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { config, trustProxy } from "./config";
 import { log } from "./log";
 import { migrate, pool } from "./db";
-import { HANDLERS, PERSONAS, can, type Action, type CommandType } from "./engine";
+import { HANDLERS, PERSONAS, can, type Action, type CommandType, type Role } from "./engine";
 import { boot, commandsSince, mode, submit, world } from "./world";
 
 // Which permission each command needs. The engine also validates its own rules; this is the role boundary the browser UI only hints at.
@@ -22,14 +22,14 @@ const app = new Hono<Env>();
 app.use("*", cors({ origin: config.corsOrigin.includes("*") ? "*" : config.corsOrigin, allowHeaders: ["authorization", "content-type"] }));
 
 app.use("*", async (c, next) => {
-  const rid = c.req.header("x-request-id")?.slice(0, 64) || crypto.randomUUID(), t0 = Date.now();
+  const given = c.req.header("x-request-id"), rid = given && /^[\w-]{8,64}$/.test(given) ? given : crypto.randomUUID(), t0 = Date.now(); // a caller-chosen id is kept only if it is a plain token, so logs cannot be forged with newlines or junk
   c.set("rid", rid); c.header("x-request-id", rid);
   await next();
   log.info("request", { rid, method: c.req.method, path: new URL(c.req.url).pathname, status: c.res.status, ms: Date.now() - t0, user: c.get("session")?.sub });
 });
-const clientIp = (c: Context<Env>) => (trustProxy ? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() : undefined) || getConnInfo(c).remote.address || "unknown";
-async function authEvent(c: Context<Env>, event: string, ok: boolean, email: string | undefined, detail?: string, actor?: string) {
-  await pool.query("insert into auth_events(event,ok,email,actor,ip,request_id,detail) values ($1,$2,$3,$4,$5,$6,$7)", [event, ok, email?.toLowerCase() ?? null, actor ?? null, clientIp(c), c.get("rid"), detail ?? null]).catch((e) => log.error("auth_event_failed", { err: String(e) }));
+const clientIp = (c: Context<Env>) => (trustProxy ? c.req.header("x-forwarded-for")?.split(",").pop()?.trim() : undefined) || getConnInfo(c).remote.address || "unknown";
+async function authEvent(c: Context<Env>, event: string, ok: boolean, email: string | undefined, detail?: string, actor?: string, db: { query: typeof pool.query } = pool) {
+  await db.query("insert into auth_events(event,ok,email,actor,ip,request_id,detail) values ($1,$2,$3,$4,$5,$6,$7)", [event, ok, email?.toLowerCase() ?? null, actor ?? null, clientIp(c), c.get("rid"), detail ?? null]).catch((e) => log.error("auth_event_failed", { err: String(e) }));
 }
 
 app.get("/health", async (c) => { await pool.query("select 1"); return c.json({ ok: true, anchor: world.today }); });
@@ -38,13 +38,26 @@ app.post("/auth/login", async (c) => {
   const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({} as { email?: string; password?: string }));
   if (!email || !password) return c.json({ error: "Enter your email and password." }, 400);
   if (throttled(`${clientIp(c)}|${email.toLowerCase()}`)) return c.json({ error: "Too many attempts. Wait a few minutes." }, 429);
-  // Lockout: 5 failed sign-ins for this account in 15 minutes, whatever the address, blocks sign-in until the window passes.
-  const failed = (await pool.query("select count(*)::int n from auth_events where event='login' and not ok and email=$1 and at > now() - interval '15 minutes'", [email.toLowerCase()])).rows[0].n;
-  if (failed >= 5) { await authEvent(c, "login_locked", false, email); return c.json({ error: "Too many failed attempts. Try again in 15 minutes." }, 429); }
-  const u = (await pool.query("select * from users where lower(email)=lower($1) and active", [email])).rows[0];
-  if (!u || !verifyPassword(password, u.pw_hash)) { await authEvent(c, "login", false, email, u ? "bad password" : "unknown or disabled account"); return c.json({ error: "Wrong email or password." }, 401); }
-  await authEvent(c, "login", true, email);
-  const s = { sub: u.id as string, email: u.email as string, name: u.name as string, role: u.role, emp: u.emp_name as string };
+  // Lockout, per account and per client address: 5 failed sign-ins from one address in 15 minutes locks that address out of that
+  // account, so a stranger cannot lock the real owner out from elsewhere. 50 failures from anywhere also lock the account for the
+  // window (distributed guessing). The check, the password test and the event write run under one per-account advisory lock,
+  // so parallel requests cannot slip extra guesses past the limit.
+  const em = email.toLowerCase(), ip = clientIp(c), cx = await pool.connect();
+  let u: Record<string, unknown> | undefined, locked = false, good = false;
+  try {
+    await cx.query("begin"); await cx.query("select pg_advisory_xact_lock(hashtext($1))", [em]);
+    const f = (await cx.query("select count(*) filter (where ip = $2)::int as here, count(*)::int as total from auth_events where event='login' and not ok and email=$1 and at > now() - interval '15 minutes'", [em, ip])).rows[0];
+    if (f.here >= 5 || f.total >= 50) { locked = true; await authEvent(c, "login_locked", false, email, undefined, undefined, cx); }
+    else {
+      u = (await cx.query("select * from users where lower(email)=$1 and active", [em])).rows[0];
+      good = !!u && verifyPassword(password, u.pw_hash as string);
+      await authEvent(c, "login", good, email, good ? undefined : u ? "bad password" : "unknown or disabled account", undefined, cx); // same connection: a pool-wide wait here would deadlock when many logins queue on the lock
+    }
+    await cx.query("commit");
+  } catch (e) { await cx.query("rollback").catch(() => undefined); throw e; } finally { cx.release(); }
+  if (locked) return c.json({ error: "Too many failed attempts. Try again in 15 minutes." }, 429);
+  if (!good || !u) return c.json({ error: "Wrong email or password." }, 401);
+  const s = { sub: u.id as string, email: u.email as string, name: u.name as string, role: u.role as Role, emp: u.emp_name as string };
   return c.json({ token: issue(s), user: { id: s.sub, email: s.email, name: s.name, title: u.title, role: s.role, emp: s.emp } });
 });
 
