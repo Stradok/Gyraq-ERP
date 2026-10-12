@@ -9,11 +9,13 @@ const COLLECTIONS = ["warehouses", "suppliers", "products", "customers", "employ
 const keyOf = (d: Doc) => d.id ?? d.month ?? "";
 const digest = (v: unknown) => createHash("sha1").update(JSON.stringify(v)).digest("hex");
 
-function docs(db: DB): Map<string, Map<string, { json: string; h: string }>> {
+function docs(db: DB, only?: ReadonlySet<string>): Map<string, Map<string, { json: string; h: string }>> {
   const out = new Map<string, Map<string, { json: string; h: string }>>();
   const add = (kind: string, id: string, v: unknown) => { const json = JSON.stringify(v); (out.get(kind) ?? out.set(kind, new Map()).get(kind)!).set(id, { json, h: digest(json) }); };
-  for (const k of COLLECTIONS) for (const d of db[k] as unknown as Doc[]) add(k, keyOf(d), d);
-  add("settings", "main", db.settings); add("company", "main", db.company); add("periodStatus", "main", db.periodStatus);
+  for (const k of COLLECTIONS) if (!only || only.has(k)) for (const d of db[k] as unknown as Doc[]) add(k, keyOf(d), d);
+  if (!only || only.has("settings")) add("settings", "main", db.settings);
+  if (!only || only.has("company")) add("company", "main", db.company);
+  if (!only || only.has("periodStatus")) add("periodStatus", "main", db.periodStatus);
   return out;
 }
 
@@ -37,14 +39,14 @@ export class Projector {
     await this.delta(c, db);
   }
 
-  async delta(c: pg.PoolClient, db: DB) {
+  async delta(c: pg.PoolClient, db: DB, only?: ReadonlySet<string>) {
     // accounts rarely change; keep them in sync by upsert on first sight
     if (!this.hashes.has("__accounts")) {
       await c.query("insert into accounts(code,name,type,grp) select * from unnest($1::text[],$2::text[],$3::text[],$4::text[]) on conflict (code) do update set name=excluded.name", [db.accounts.map((a) => a.code), db.accounts.map((a) => a.name), db.accounts.map((a) => a.type), db.accounts.map((a) => a.group)]);
       this.hashes.set("__accounts", new Map());
     }
     // documents
-    const now = docs(db);
+    const now = docs(db, only);
     for (const [kind, m] of now) {
       const prev = this.hashes.get(kind) ?? new Map<string, string>();
       const up: [string, string][] = [];
@@ -58,7 +60,7 @@ export class Projector {
       this.hashes.set(kind, new Map([...m].map(([id, v]) => [id, v.h])));
     }
     // ledger (append-only)
-    const newJ = db.journal.filter((j) => !this.journal.has(j.number));
+    const newJ = only && !only.has("journal") ? [] : db.journal.filter((j) => !this.journal.has(j.number));
     for (let i = 0; i < newJ.length; i += 1000) {
       const part = newJ.slice(i, i + 1000);
       await c.query("insert into journal_entries(number,entry_date,memo,source,type,posted_by) select * from unnest($1::text[],$2::date[],$3::text[],$4::text[],$5::text[],$6::text[])", [part.map((j) => j.number), part.map((j) => j.date), part.map((j) => j.memo), part.map((j) => j.source), part.map((j) => j.type), part.map((j) => j.postedBy)]);
@@ -70,14 +72,14 @@ export class Projector {
       part.forEach((j) => this.journal.add(j.number));
     }
     // audit (append-only)
-    const newA = db.audit.filter((a) => !this.audit.has(a.id));
+    const newA = only && !only.has("audit") ? [] : db.audit.filter((a) => !this.audit.has(a.id));
     for (let i = 0; i < newA.length; i += 2000) {
       const p = newA.slice(i, i + 2000);
       await c.query("insert into audit_log(id,at,actor,action,entity,ref,source,detail) select * from unnest($1::text[],$2::timestamptz[],$3::text[],$4::text[],$5::text[],$6::text[],$7::text[],$8::text[]) on conflict (id) do nothing", [p.map((a) => a.id), p.map((a) => a.at), p.map((a) => a.actor), p.map((a) => a.action), p.map((a) => a.entity), p.map((a) => a.ref), p.map((a) => a.source), p.map((a) => a.detail ?? null)]);
       p.forEach((a) => this.audit.add(a.id));
     }
     // stock
-    const ch = [...db.stock].filter(([k, cell]) => this.stock.get(k) !== digest(cell));
+    const ch = only && !only.has("stock") ? [] : [...db.stock].filter(([k, cell]) => this.stock.get(k) !== digest(cell));
     for (let i = 0; i < ch.length; i += 3000) {
       const p = ch.slice(i, i + 3000);
       await c.query("insert into stock_levels(product_id,warehouse_id,on_hand,reserved,value) select * from unnest($1::text[],$2::text[],$3::numeric[],$4::numeric[],$5::numeric[]) on conflict (product_id,warehouse_id) do update set on_hand=excluded.on_hand, reserved=excluded.reserved, value=excluded.value", [p.map(([k]) => k.split("|")[0]), p.map(([k]) => k.split("|")[1]), p.map(([, v]) => v.on), p.map(([, v]) => v.res), p.map(([, v]) => v.val)]);

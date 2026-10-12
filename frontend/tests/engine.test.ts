@@ -6,13 +6,21 @@ import { execute, replay, type CommandInput, type CommandRecord, type CommandTyp
 import { apOpen } from "../src/lib/data/queries";
 import { runOn } from "../src/lib/data/sim";
 import type { Role } from "../src/lib/rbac";
+import { TOUCHES } from "../src/lib/engine/touches";
 
 const db: DB = buildDB();
 const LOG: CommandRecord[] = [];
 let n = 0;
+// Fingerprint of every part of the company state, to see which collections a command really changed.
+const fingerprint = (d: DB) => new Map(Object.entries(d).filter(([k]) => !["today", "start"].includes(k)).map(([k, v]) => [k, JSON.stringify(v instanceof Map ? [...v] : v)]));
+const touched = new Map<string, Set<string>>(); // command -> collections it changed across the whole suite
 function run<T extends CommandType>(type: T, payload: CommandInput<T>, role: Role = "owner", actor = "Tariq Mehmood") {
   const rec: CommandRecord = { id: `t${++n}`, type, payload, at: `${db.today}T10:00:00+05:00`, date: db.today, actor, role, source: "user" };
+  const before = fingerprint(db);
   const res = execute(db, rec);
+  const changed = [...fingerprint(db)].filter(([k, v]) => before.get(k) !== v).map(([k]) => k);
+  if (res.ok) { const set = touched.get(type) ?? touched.set(type, new Set()).get(type)!; changed.forEach((k) => set.add(k)); assert.deepEqual(changed.filter((k) => !(TOUCHES[type] as readonly string[]).includes(k)), [], `${type} changed ${changed.join(", ")} but TOUCHES lists ${TOUCHES[type].join(", ")}`); }
+  else assert.deepEqual(changed.filter((k) => k !== "audit"), [], `${type} was refused (${res.error.code}) yet changed ${changed.join(", ")}: a refused command must change nothing`);
   if (res.ok) LOG.push(rec);
   return res;
 }
@@ -152,6 +160,7 @@ expectFail(run("RunPayroll", { month: db.today.slice(0, 7) }, "finance"), "PAY_F
 }
 integrity("employees");
 
+console.log(`Touch map: ${touched.size} commands exercised, none changed anything outside TOUCHES`);
 console.log("Replay determinism");
 const fresh = buildDB();
 const r = replay(fresh, LOG);

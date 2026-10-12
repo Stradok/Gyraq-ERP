@@ -196,5 +196,28 @@ console.log("Permissions (R1)");
   console.log("  ✓ no self-approval");
 }
 
+console.log("State tables (R2.2)");
+{
+  const { TABLES, SINGLETONS } = await import("../src/state-schema");
+  const world = W.world as unknown as Record<string, any>;
+  let rowsChecked = 0;
+  for (const t of TABLES) {
+    const rows = (await pool.query(`select id, data from ${t.table}`)).rows;
+    const docs: any[] = world[t.collection as string];
+    assert.equal(rows.length, docs.length, `${t.table}: row count ${rows.length} vs ${docs.length}`);
+    const byId = new Map(rows.map((r) => [r.id, r.data]));
+    for (const d of docs) { assert.deepEqual(byId.get(t.id(d)), JSON.parse(JSON.stringify(d)), `${t.table} ${t.id(d)} differs from the engine's document`); rowsChecked++; }
+  }
+  for (const k of SINGLETONS) assert.deepEqual((await pool.query("select data from state_singletons where key=$1", [k])).rows[0].data, JSON.parse(JSON.stringify(world[k])), `${k} differs`);
+  console.log(`  ✓ ${rowsChecked} documents in ${TABLES.length} tables equal the engine's state exactly`);
+  const cust = (await pool.query("select name, credit_limit, status from customers where name='API Test Mart'")).rows[0];
+  assert.equal(cust.credit_limit, 200000); assert.equal(cust.status, "active"); console.log("  ✓ typed columns filled");
+  assert.ok((await pool.query("select count(*)::int n from commands where engine_version is not null")).rows[0].n > 0, "commands record the engine version");
+  const fk = await pool.connect(); await fk.query("begin");
+  await fk.query("insert into invoices(id, number, customer_id, data) values ('inv-orphan','X-1','no-such-customer','{}')");
+  await assert.rejects(fk.query("commit"), /foreign key/, "database refuses an invoice for a customer that does not exist"); fk.release();
+  console.log("  ✓ foreign keys enforced");
+}
+
 console.log("\nAll backend checks passed.");
 srv.close(); await pool.end(); process.exit(0);

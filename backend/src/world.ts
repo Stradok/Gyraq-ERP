@@ -1,6 +1,8 @@
 // The authoritative business state. Booted from the seed (pinned to a stored anchor date) plus every command in Postgres.
 import { pool } from "./db";
 import { Projector } from "./project";
+import { StateWriter } from "./state";
+import { TOUCHES } from "../../frontend/src/lib/engine/touches";
 import { config } from "./config";
 import { log as logger } from "./log";
 import { buildDB, buildEmptyDB, execute, replay, runOn, setWorldResolver, todayPK, type CommandRecord, type CommandType, type DB, type Role } from "./engine";
@@ -9,6 +11,8 @@ import type { Problem } from "../../frontend/src/lib/engine/core";
 export let world: DB;
 export let mode: "demo" | "empty" = "demo";
 const projector = new Projector();
+const state = new StateWriter();
+const ENGINE_VERSION = process.env.ENGINE_VERSION ?? process.env.GIT_SHA ?? "dev";
 setWorldResolver(() => world);
 
 function rowToRecord(r: Record<string, unknown>): CommandRecord {
@@ -33,8 +37,13 @@ export async function boot() {
   const projected = (await pool.query("select value from meta where key='projected'")).rows[0];
   const c = await pool.connect();
   try {
-    if (fresh || !projected) { await c.query("begin"); await projector.full(c, world); await c.query("insert into meta(key,value) values ('projected','1') on conflict (key) do update set value='1'"); await c.query("commit"); logger.info("seed_written"); }
-    else projector.adopt(world);
+    if (fresh || !projected) { await c.query("begin"); await projector.full(c, world); await state.truncateAll(c); await state.write(c, world); await c.query("insert into meta(key,value) values ('projected','1') on conflict (key) do update set value='1'"); await c.query("commit"); logger.info("seed_written"); }
+    else {
+      projector.adopt(world);
+      // Databases made before the state tables existed: fill them once from the world just rebuilt.
+      if (!(await state.hasData(c))) { await c.query("begin"); await state.write(c, world); await c.query("commit"); logger.info("state_tables_backfilled"); }
+      else state.adopt(world);
+    }
   } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); }
   logger.info("world_ready", { anchor, mode, commands: log.length });
 }
@@ -61,8 +70,10 @@ export function submit(actor: { name: string; role: Role }, type: CommandType, p
     const c = await pool.connect();
     try {
       await c.query("begin");
-      await c.query("insert into commands(seq,id,type,payload,actor,role,business_date,at,source,message) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", [seq, rec.id, type, JSON.stringify(payload), rec.actor, rec.role, rec.date, rec.at, source, res.message ?? null]);
-      await projector.delta(c, world);
+      await c.query("insert into commands(seq,id,type,payload,actor,role,business_date,at,source,message,engine_version) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", [seq, rec.id, type, JSON.stringify(payload), rec.actor, rec.role, rec.date, rec.at, source, res.message ?? null, ENGINE_VERSION]);
+      const only = new Set<string>(TOUCHES[type]);
+      await projector.delta(c, world, only);
+      await state.write(c, world, only);
       await c.query("commit");
     } catch (e) {
       await c.query("rollback").catch(() => undefined);

@@ -8,6 +8,8 @@ export const config = {
   tokenHours: 8,
   // demo = seeded sample company. empty = a real company that starts blank (one Owner account from OWNER_*).
   companyMode: (env.COMPANY_MODE === "empty" ? "empty" : "demo") as "demo" | "empty",
+  // replay = state is rebuilt from the command log at boot (current behaviour). tables = state is read from the tables (R2.3).
+  stateSource: (env.STATE_SOURCE === "tables" ? "tables" : "replay") as "replay" | "tables",
   ownerEmail: env.OWNER_EMAIL ?? "",
   ownerName: env.OWNER_NAME ?? "Owner",
   ownerPassword: env.OWNER_PASSWORD ?? "",
