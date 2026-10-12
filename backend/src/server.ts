@@ -37,24 +37,30 @@ app.get("/health", async (c) => { await pool.query("select 1"); return c.json({ 
 app.post("/auth/login", async (c) => {
   const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({} as { email?: string; password?: string }));
   if (!email || !password) return c.json({ error: "Enter your email and password." }, 400);
-  if (throttled(`${clientIp(c)}|${email.toLowerCase()}`)) return c.json({ error: "Too many attempts. Wait a few minutes." }, 429);
+  if (throttled(`${clientIp(c)}|${email.toLowerCase()}`) || throttled(`ip:${clientIp(c)}`, 30)) return c.json({ error: "Too many attempts. Wait a few minutes." }, 429);
   // Lockout, per account and per client address: 5 failed sign-ins from one address in 15 minutes locks that address out of that
   // account, so a stranger cannot lock the real owner out from elsewhere. 50 failures from anywhere also lock the account for the
   // window (distributed guessing). The check, the password test and the event write run under one per-account advisory lock,
   // so parallel requests cannot slip extra guesses past the limit.
   const em = email.toLowerCase(), ip = clientIp(c), cx = await pool.connect();
-  let u: Record<string, unknown> | undefined, locked = false, good = false;
+  let u: Record<string, unknown> | undefined, locked = false, good = false, busy = false;
   try {
-    await cx.query("begin"); await cx.query("select pg_advisory_xact_lock(hashtext($1))", [em]);
+    await cx.query("begin");
+    // try-lock: if another attempt on this account is mid-check, refuse at once instead of queueing. A queue of waiting
+    // attempts would hold database connections and let one attacker starve the whole API.
+    if (!(await cx.query("select pg_try_advisory_xact_lock(hashtext($1)) as ok", [em])).rows[0].ok) busy = true;
+    if (!busy) {
     const f = (await cx.query("select count(*) filter (where ip = $2)::int as here, count(*)::int as total from auth_events where event='login' and not ok and email=$1 and at > now() - interval '15 minutes'", [em, ip])).rows[0];
     if (f.here >= 5 || f.total >= 50) { locked = true; await authEvent(c, "login_locked", false, email, undefined, undefined, cx); }
     else {
       u = (await cx.query("select * from users where lower(email)=$1 and active", [em])).rows[0];
-      good = !!u && verifyPassword(password, u.pw_hash as string);
+      good = await verifyPassword(password, u?.pw_hash as string | undefined);
       await authEvent(c, "login", good, email, good ? undefined : u ? "bad password" : "unknown or disabled account", undefined, cx); // same connection: a pool-wide wait here would deadlock when many logins queue on the lock
+    }
     }
     await cx.query("commit");
   } catch (e) { await cx.query("rollback").catch(() => undefined); throw e; } finally { cx.release(); }
+  if (busy) return c.json({ error: "Another sign-in for this account is in progress. Try again in a moment." }, 429);
   if (locked) return c.json({ error: "Too many failed attempts. Try again in 15 minutes." }, 429);
   if (!good || !u) return c.json({ error: "Wrong email or password." }, 401);
   const s = { sub: u.id as string, email: u.email as string, name: u.name as string, role: u.role as Role, emp: u.emp_name as string };
@@ -93,7 +99,7 @@ app.post("/api/users", async (c) => {
   if ((b.password ?? "").length < 8) return c.json({ error: "Password must be at least 8 characters." }, 400);
   const emp = b.emp || name; // the employee record this person acts as (leave, expenses); may be added later
   if ((await pool.query("select 1 from users where lower(email)=$1", [email])).rowCount) return c.json({ error: "A user with this email already exists." }, 409);
-  const r = await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6) returning id", [email, name, b.title ?? "", b.role, emp, hashPassword(b.password!)]);
+  const r = await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6) returning id", [email, name, b.title ?? "", b.role, emp, await hashPassword(b.password!)]);
   await authEvent(c, "user_created", true, email, `role ${b.role}`, c.get("session").email);
   return c.json({ ok: true, id: r.rows[0].id });
 });
@@ -109,7 +115,7 @@ app.patch("/api/users/:id", async (c) => {
   if (b.password !== undefined && b.password.length < 8) return c.json({ error: "Password must be at least 8 characters." }, 400);
   const demotes = (target.role === "owner" && ((b.role && b.role !== "owner") || b.active === false));
   if (demotes && (await pool.query("select count(*)::int n from users where role='owner' and active")).rows[0].n < 2) return c.json({ error: "There must always be at least one active Owner." }, 400);
-  await pool.query("update users set role=coalesce($2,role), active=coalesce($3,active), title=coalesce($4,title), pw_hash=coalesce($5,pw_hash) where id=$1", [id, b.role ?? null, b.active ?? null, b.title ?? null, b.password ? hashPassword(b.password) : null]);
+  await pool.query("update users set role=coalesce($2,role), active=coalesce($3,active), title=coalesce($4,title), pw_hash=coalesce($5,pw_hash) where id=$1", [id, b.role ?? null, b.active ?? null, b.title ?? null, b.password ? await hashPassword(b.password) : null]);
   await authEvent(c, b.password ? "password_reset" : "user_updated", true, undefined, `user ${id}: ${JSON.stringify({ role: b.role, active: b.active, title: b.title })}`, s.email);
   return c.json({ ok: true });
 });
@@ -137,10 +143,10 @@ async function seedUsers() {
   if ((await pool.query("select count(*)::int as n from users")).rows[0].n > 0) return;
   if (mode === "empty") {
     if (!config.ownerEmail || config.ownerPassword.length < 8) throw new Error("COMPANY_MODE=empty needs OWNER_EMAIL and an OWNER_PASSWORD of at least 8 characters.");
-    await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,'Owner','owner',$2,$3)", [config.ownerEmail.toLowerCase(), config.ownerName, hashPassword(config.ownerPassword)]);
+    await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,'Owner','owner',$2,$3)", [config.ownerEmail.toLowerCase(), config.ownerName, await hashPassword(config.ownerPassword)]);
     log.info("owner_created", { email: config.ownerEmail }); return;
   }
-  const pw = hashPassword(config.demoPassword);
+  const pw = await hashPassword(config.demoPassword);
   for (const p of PERSONAS) await pool.query("insert into users(email,name,title,role,emp_name,pw_hash) values ($1,$2,$3,$4,$5,$6)", [p.email, p.name, p.title, p.role, p.empName, pw]);
   log.info("demo_users_created", { count: PERSONAS.length });
 }
