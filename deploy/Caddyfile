@@ -1,11 +1,13 @@
-# HTTPS in front of the stack. Caddy gets and renews certificates by itself.
-# Replace the two hostnames, point their DNS at this server, run: caddy run --config Caddyfile
-# In .env set: CORS_ORIGIN=https://erp.customer.com  TRUST_PROXY=1  (and rebuild web with PUBLIC_API_URL=https://api.customer.com)
-erp.customer.com {
+# One address for everything: the web app, the API and the live stream. Caddy gets and renews the HTTPS certificate by itself.
+# DOMAIN comes from .env (install.sh sets it). Point the domain's DNS at this server first.
+{$DOMAIN} {
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:3000
-}
-api.customer.com {
-	encode zstd gzip
-	reverse_proxy 127.0.0.1:4000
+	@api path /api/* /auth/* /health
+	handle @api {
+		# flush_interval -1: send the live-update stream to the browser immediately instead of buffering it
+		reverse_proxy api:4000 { flush_interval -1 }
+	}
+	handle {
+		reverse_proxy web:3000
+	}
 }

@@ -21,3 +21,6 @@ See `docs/MIGRATION.md` for how the demo engine maps to a real backend and how t
 
 ## Self-hosted stack (Postgres + API + web)
 `docker compose up -d --build`, then open http://localhost:3000. See [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
+
+## Deploy, desktop apps, sync
+See [docs/DEPLOY.md](docs/DEPLOY.md): one-command server install, the installer workflow for `.exe`/`.dmg`/`.deb`, phones, and how offline sync and live updates work.

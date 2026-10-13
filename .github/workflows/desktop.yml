@@ -1,0 +1,21 @@
+name: Desktop installers
+# Builds the Windows .exe, Linux AppImage/.deb and macOS .dmg on GitHub's machines (free), so nothing heavy runs on your PC.
+# Run it from the Actions tab, or push a tag like v1.0.0. Download the files from the run's Artifacts.
+on:
+  workflow_dispatch:
+  push: { tags: ["v*"] }
+jobs:
+  build:
+    strategy:
+      matrix: { os: [windows-latest, ubuntu-latest, macos-latest] }
+    runs-on: ${{ matrix.os }}
+    defaults: { run: { working-directory: desktop } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install
+      - run: npx electron-builder --publish never
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" }   # unsigned until you buy a signing certificate (see docs/DEPLOY.md)
+      - uses: actions/upload-artifact@v4
+        with: { name: "meridian-${{ matrix.os }}", path: "desktop/dist/*.*", if-no-files-found: error }

@@ -42,5 +42,15 @@ services:
       GOOGLE_GENERATIVE_AI_API_KEY: "${GOOGLE_GENERATIVE_AI_API_KEY:-}"
     ports: ["${BIND_ADDR:-127.0.0.1}:3000:3000"]
     restart: unless-stopped
+  caddy:
+    profiles: ["https"]            # only started with: docker compose --profile https up -d
+    image: caddy:2-alpine
+    mem_limit: 96m
+    depends_on: [web, api]
+    environment: { DOMAIN: "${DOMAIN:-localhost}" }
+    ports: ["80:80", "443:443"]
+    volumes: ["./deploy/Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data"]
+    restart: unless-stopped
 volumes:
+  caddy_data: {}
   pgdata: {}

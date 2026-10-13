@@ -1,0 +1,18 @@
+{
+  "name": "meridian-desktop",
+  "version": "1.0.0",
+  "description": "Meridian ERP desktop app",
+  "main": "main.js",
+  "author": "Gyraq",
+  "license": "UNLICENSED",
+  "scripts": { "start": "electron .", "dist": "electron-builder" },
+  "devDependencies": { "electron": "^33.0.0", "electron-builder": "^25.0.0" },
+  "build": {
+    "appId": "com.gyraq.meridian",
+    "productName": "Meridian ERP",
+    "files": ["main.js", "setup.html", "preload.js"],
+    "linux": { "target": ["AppImage", "deb"], "category": "Office" },
+    "win": { "target": ["nsis"] },
+    "mac": { "target": ["dmg"], "category": "public.app-category.business" }
+  }
+}

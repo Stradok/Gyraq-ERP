@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Meridian ERP setup</title>
+<body style="font:15px system-ui;background:#0b0c0e;color:#e6e6e6;display:grid;place-items:center;min-height:100vh;margin:0">
+<form id="f" style="width:min(26rem,90vw);display:grid;gap:.9rem">
+  <h1 style="margin:0;font-size:1.3rem">Meridian ERP</h1>
+  <p style="margin:0;color:#9a9a9a">Enter the address your company's Meridian server uses. You'll sign in with your own account.</p>
+  <input id="u" placeholder="https://erp.yourcompany.com" autofocus style="padding:.7rem;border-radius:8px;border:1px solid #333;background:#16181c;color:inherit">
+  <button style="padding:.7rem;border:0;border-radius:8px;background:#4f7cff;color:#fff;font-weight:600">Connect</button>
+  <p id="e" style="margin:0;color:#ff7a7a;min-height:1.2em"></p>
+</form>
+<script>document.getElementById("f").onsubmit = async (ev) => { ev.preventDefault(); const r = await window.meridian.saveServer(document.getElementById("u").value); if (!r.ok) document.getElementById("e").textContent = r.error; };</script>
