@@ -1,6 +1,7 @@
 // Domain engine core. Commands validate first, then mutate the DB atomically, post balanced journal entries,
 // write an audit event and emit notifications. The same code runs in the browser (demo) and in the server
 // (assistant) so a real backend can replace it behind the same command shapes. See docs/MIGRATION.md.
+import { r2 } from "../money";
 import { addDays, diffDays } from "../data/dates";
 import type { Cell, DB } from "../data/sim";
 import type { AuditEvent, ISODate, JournalLine, Notification, Product } from "../data/types";
@@ -12,7 +13,7 @@ export type Result<T = undefined> = { ok: true; value: T; message?: string } | {
 export const ok = <T = undefined>(value?: T, message?: string): Result<T> => ({ ok: true, value: value as T, message });
 export const fail = (code: string, title: string, detail: string, recovery: string): Result<never> => ({ ok: false, error: { code, title, detail, recovery } });
 
-export const r2 = (n: number) => Math.round(n * 100) / 100;
+export { r2 };
 export const pad = (n: number, w: number) => String(n).padStart(w, "0");
 
 /** Next document number: highest numeric suffix among existing numbers + 1. */

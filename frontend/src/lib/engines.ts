@@ -1,11 +1,11 @@
 // Pure pricing / tax / credit rules mirrored from docs/plan/05 (client-side preview; the backend owns the authoritative run).
+import { r2 } from "./money";
 import type { CreditCheck, Customer, DocLine, Product } from "./data/types";
 import type { CustomerStats } from "./data/queries";
 import { SCHEMES } from "./data/catalog";
 import { getDB } from "./data/sim";
 
 const CHANNEL_FACTOR: Record<Customer["channel"], number> = { modern_trade: 0.97, wholesale: 0.985, retail: 1, sub_distributor: 0.96, horeca: 1 };
-const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export interface PricedLine extends DocLine { cartons: number; trace: string[] }
 

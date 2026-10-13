@@ -1,5 +1,6 @@
 // FBR Digital Invoicing payload mapper (PRAL API shape) and pre-flight validation.
 // In demo mode nothing is transmitted; the same mapper feeds the sandbox/live connector later.
+import { r2 } from "../money";
 import { ORG } from "../data/catalog";
 import type { DB } from "../data/sim";
 import type { Invoice } from "../data/types";
@@ -16,7 +17,6 @@ export interface FbrPayload {
   buyerNTNCNIC: string; buyerBusinessName: string; buyerProvince: string; buyerAddress: string; buyerRegistrationType: "Registered" | "Unregistered";
   items: FbrItem[];
 }
-const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function fbrPayload(db: DB, inv: Invoice): FbrPayload {
   const c = db.customers.find((x) => x.id === inv.customerId)!;

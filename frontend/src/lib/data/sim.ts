@@ -1,6 +1,7 @@
 // Deterministic business simulation (docs/plan/09-seed-and-demo.md §3).
 // 15 months of history ending today. Fixed PRNG seed => same business every run, dates shift with the calendar.
 // Stock, AR, AP and the GL are produced by the same events, so they reconcile by construction.
+import { r2 } from "../money";
 import {
   BANKS, CATEGORIES, CUSTOMERS, FIRST_NAMES_F, FIRST_NAMES_M, LAST_NAMES, ORG, PRODUCTS, SCHEMES, SUPPLIERS, WAREHOUSES,
 } from "./catalog";
@@ -124,7 +125,6 @@ const WH_OF_CITY: Record<string, string> = {
   Faisalabad: "FSD-DP",
 };
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
 const pad = (n: number, w: number) => String(n).padStart(w, "0");
 
 /** `anchor` pins the seed's "today" (the backend stores it so its data stays put between restarts). */

@@ -10,6 +10,7 @@ import { findGuide } from "../src/lib/ai/guide";
 import { validateExtraction } from "../src/lib/ai/extract";
 import { route, edition } from "../src/lib/ai/provider";
 import { bearer, verifyCaller } from "../src/lib/ai/session";
+import { r2 } from "../src/lib/money";
 import { csvCell } from "../src/lib/csv";
 import { checkFigures } from "../src/lib/ai/grounding";
 import { runTool } from "../src/lib/ai/tools";
@@ -83,6 +84,15 @@ runOn(db, () => {
   assert.equal(csvCell('=HYPERLINK("x")'), `"'=HYPERLINK(""x"")"`, "formula neutralised");
   assert.equal(csvCell("@SUM(A1)"), `"'@SUM(A1)"`); assert.equal(csvCell(-1250.5), '"-1250.5"', "numbers untouched"); assert.equal(csvCell("Metro Mart"), '"Metro Mart"');
   console.log("  ✓ CSV export neutralises formula injection");
+
+  // Money: rounding agrees with exact decimal arithmetic (BigInt reference) and sums never drift.
+  let seed = 7; const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  const ref = (digits: string): number => { const neg = digits.startsWith("-"), d = digits.replace("-", ""), [i, f = ""] = d.split("."); const frac = (f + "000").slice(0, 3); let c = BigInt(i + frac.slice(0, 2)); if (Number(frac[2]) >= 5) c += BigInt(1); return (neg ? -1 : 1) * Number(c) / 100; };
+  for (let k = 0; k < 20000; k++) { const s3 = `${rnd() < 0.5 ? "-" : ""}${Math.floor(rnd() * 90000)}.${String(Math.floor(rnd() * 1000)).padStart(3, "0")}`; assert.equal(r2(Number(s3)), ref(s3), `r2(${s3})`); }
+  assert.equal(r2(1.005), 1.01, "half cents round up (the old formula gave 1)"); assert.equal(r2(-1.005), -1.01); assert.equal(r2(0.1 + 0.2), 0.3); assert.equal(r2(2.675), 2.68);
+  let acc = 0, exact = BigInt(0); for (let k = 0; k < 200000; k++) { const c = Math.floor(rnd() * 5_000_000); exact += BigInt(c); acc = r2(acc + c / 100); }
+  assert.equal(acc, Number(exact) / 100, "200,000 additions on the cent grid drift by exactly zero");
+  console.log("  ✓ money: rounding matches exact decimal arithmetic; sums do not drift");
 
   console.log("FBR mapper on seeded invoices");
   let bad = 0;
