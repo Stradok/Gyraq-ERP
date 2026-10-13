@@ -10,12 +10,15 @@ import { log } from "./log";
 import { migrate, pool } from "./db";
 import { COMMAND_PERMISSIONS, HANDLERS, PERSONAS, can, type CommandType, type Role } from "./engine";
 import { enforceScope } from "./scope";
-import { boot, commandsSince, mode, submit, world } from "./world";
+import { boot, commandsSince, mode, readOnly, snapshot, submit, world } from "./world";
+import { compress } from "hono/compress";
+import { reconcile } from "./integrity";
 
 type Env = { Variables: { session: Session; rid: string } };
 const app = new Hono<Env>();
 app.use("*", cors({ origin: config.corsOrigin.includes("*") ? "*" : config.corsOrigin, allowHeaders: ["authorization", "content-type"] }));
 
+app.use("*", compress());
 app.use("*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "Request too large." }, 413) }));
 app.use("*", async (c, next) => {
   const given = c.req.header("x-request-id"), rid = given && /^[\w-]{8,64}$/.test(given) ? given : crypto.randomUUID(), t0 = Date.now(); // a caller-chosen id is kept only if it is a plain token, so logs cannot be forged with newlines or junk
@@ -28,7 +31,7 @@ async function authEvent(c: Context<Env>, event: string, ok: boolean, email: str
   await db.query("insert into auth_events(event,ok,email,actor,ip,request_id,detail) values ($1,$2,$3,$4,$5,$6,$7)", [event, ok, email?.toLowerCase() ?? null, actor ?? null, clientIp(c), c.get("rid"), detail ?? null]).catch((e) => log.error("auth_event_failed", { err: String(e) }));
 }
 
-app.get("/health", async (c) => { await pool.query("select 1"); return c.json({ ok: true, anchor: world.today }); });
+app.get("/health", async (c) => { await pool.query("select 1"); return c.json({ ok: !readOnly, anchor: world.today, paused: !!readOnly }); });
 
 app.post("/auth/login", async (c) => {
   const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({} as { email?: string; password?: string }));
@@ -120,8 +123,16 @@ app.patch("/api/users/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+// Owner/Admin: run the books-agree-with-themselves checks now.
+app.get("/api/health/integrity", (c) => isAdmin(c.get("session")) ? c.json({ ok: reconcile(world).length === 0, paused: !!readOnly, problems: reconcile(world) }) : noAccess(c));
+
 /** Everything a browser needs to rebuild the shared state: the seed anchor and every command so far. */
-app.get("/api/bootstrap", async (c) => c.json({ anchor: world.today, mode, commands: await commandsSince(0), session: c.get("session") }));
+// A company that started empty is served as a state snapshot (its size follows its data, not its history); the demo company is
+// cheaper to rebuild in the browser from the seed plus its few commands. `?snapshot=1` forces a snapshot.
+app.get("/api/bootstrap", async (c) => {
+  if (mode === "empty" || c.req.query("snapshot") === "1") { const snap = await snapshot(); return c.json({ anchor: world.today, mode, seq: snap.seq, state: snap.state, commands: [], session: c.get("session") }); }
+  return c.json({ anchor: world.today, mode, commands: await commandsSince(0), session: c.get("session") });
+});
 app.get("/api/commands", async (c) => c.json({ commands: await commandsSince(Number(c.req.query("since") ?? 0)) }));
 
 app.post("/api/commands", async (c) => {

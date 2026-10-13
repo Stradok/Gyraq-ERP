@@ -4,7 +4,7 @@
 // identical ids. If the server says we were behind or rejects it, we rebuild from the server's log.
 import { toast } from "sonner";
 import { create } from "zustand";
-import { getDB, resetWorld, setAnchor } from "../data/sim";
+import { adoptSnapshot, getDB, resetWorld, setAnchor } from "../data/sim";
 import { useERP, useWorld } from "../store";
 import type { Role } from "../rbac";
 import { execute, replay, type CommandRecord } from "./commands";
@@ -35,7 +35,7 @@ const setOnline = (online: boolean) => { if (useSync.getState().online !== onlin
 
 const state = { lastSeq: 0, applied: new Set<string>(), flushing: false, timer: 0 as unknown as ReturnType<typeof setInterval> | 0, queue: [] as CommandRecord[] };
 type Stored = CommandRecord & { seq: number };
-type World = { anchor: string; mode?: "demo" | "empty"; commands: Stored[]; session: { role: Role } };
+type World = { anchor: string; mode?: "demo" | "empty"; seq?: number; state?: Record<string, unknown>; commands: Stored[]; session: { role: Role } };
 const auth = () => ({ "content-type": "application/json", authorization: `Bearer ${getToken() ?? ""}` });
 const saveQueue = () => { safe(() => localStorage.setItem(OUTBOX, JSON.stringify(state.queue)), undefined); useSync.setState({ pending: state.queue.length }); };
 const readQueue = (): CommandRecord[] => safe(() => JSON.parse(localStorage.getItem(OUTBOX) ?? "[]"), []);
@@ -56,10 +56,11 @@ export async function loadRemoteWorld(): Promise<"ok" | "auth" | "offline"> {
     b = safe(() => JSON.parse(localStorage.getItem(WORLD) ?? "null") as World | null, null);
     if (!b) { toast.error("Can't reach the server, and nothing is saved on this device yet. Connect once to use the app offline."); return "offline"; }
   }
-  resetWorld(); setAnchor(b.anchor, b.mode ?? "demo");
+  resetWorld();
+  if (b.state) adoptSnapshot(b.state, b.anchor, b.mode ?? "demo"); else setAnchor(b.anchor, b.mode ?? "demo");
   const db = getDB();
-  state.applied = new Set(); state.lastSeq = 0;
-  replay(db, b.commands);
+  state.applied = new Set(); state.lastSeq = b.seq ?? 0;
+  if (!b.state) replay(db, b.commands);
   for (const c of b.commands) { state.applied.add(c.id); state.lastSeq = Math.max(state.lastSeq, c.seq); }
   // changes made here that the server hasn't confirmed: run them again on top; drop any that no longer make sense
   state.queue = state.queue.length ? state.queue : readQueue();

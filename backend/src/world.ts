@@ -1,5 +1,9 @@
 // The authoritative business state. Booted from the seed (pinned to a stored anchor date) plus every command in Postgres.
 import { pool } from "./db";
+import type pg from "pg";
+import { hydrate } from "./hydrate";
+import { reconcile, type Inconsistency } from "./integrity";
+import { TABLES } from "./state-schema";
 import { Projector } from "./project";
 import { StateWriter } from "./state";
 import { TOUCHES } from "../../frontend/src/lib/engine/touches";
@@ -23,29 +27,86 @@ export async function commandsSince(seq: number): Promise<(CommandRecord & { seq
   return rows.map((r) => ({ ...rowToRecord({ ...r, business_date: r.business_date }), date: r.business_date as string, seq: Number(r.seq) }));
 }
 
+export let readOnly: { problems: Inconsistency[] } | null = null; // set when the books fail their own checks; commands are refused
+
+const meta = async (key: string) => (await pool.query("select value from meta where key=$1", [key])).rows[0]?.value as string | undefined;
+const setMeta = (c: { query: typeof pool.query }, key: string, value: string) => c.query("insert into meta(key,value) values ($1,$2) on conflict (key) do update set value=excluded.value", [key, value]);
+
+/** The state as the command log says it is: the seed (or an empty company) plus every stored command re-executed. */
+async function buildByReplay(anchor: string): Promise<{ db: DB; commands: number }> {
+  const db = mode === "empty" ? buildEmptyDB(anchor) : buildDB(anchor);
+  const log = await commandsSince(0);
+  const r = replay(db, log);
+  if (r.skipped) logger.warn("replay_rejected_commands", { skipped: r.skipped, hint: "the engine rules changed since these commands ran" });
+  return { db, commands: log.length };
+}
+
+/** Write the whole state to every table (legacy mirror, ledger, audit, stock and the typed state tables). */
+async function persistAll(c: pg.PoolClient, db: DB) {
+  await projector.full(c, db); await state.truncateAll(c); await state.write(c, db);
+  projector.adopt(db); state.adopt(db);
+}
+
 export async function boot() {
-  let anchor = (await pool.query("select value from meta where key='anchor'")).rows[0]?.value as string | undefined;
+  let anchor = await meta("anchor");
   const fresh = !anchor;
   if (!anchor) { anchor = todayPK(); await pool.query("insert into meta(key,value) values ('anchor',$1)", [anchor]); }
-  const stored = (await pool.query("select value from meta where key='mode'")).rows[0]?.value as string | undefined;
+  const stored = await meta("mode");
   mode = stored === "empty" || stored === "demo" ? stored : config.companyMode;
   if (!stored) await pool.query("insert into meta(key,value) values ('mode',$1)", [mode]);
-  world = mode === "empty" ? buildEmptyDB(anchor) : buildDB(anchor);
-  const log = await commandsSince(0);
-  const r = replay(world, log);
-  if (r.skipped) logger.warn("replay_rejected_commands", { skipped: r.skipped, hint: "the engine rules changed since these commands ran" });
-  const projected = (await pool.query("select value from meta where key='projected'")).rows[0];
+  const source = await meta("state_source");
+  if (config.stateSource === "tables" && !fresh && source !== "tables") throw new Error("STATE_SOURCE=tables, but this database has not been moved to the state tables yet. Back it up, then run: pnpm migrate:state");
+
+  const c = await pool.connect();
+  let commands = 0;
+  try {
+    if (config.stateSource === "tables" && !fresh) {
+      world = await hydrate(pool, anchor, (await meta("start")) ?? anchor);
+      projector.adopt(world); state.adopt(world);
+    } else {
+      const built = await buildByReplay(anchor); world = built.db; commands = built.commands;
+      const projected = await meta("projected");
+      await c.query("begin");
+      if (fresh || !projected) { await persistAll(c, world); await setMeta(c, "projected", "1"); await setMeta(c, "start", world.start); if (config.stateSource === "tables") await setMeta(c, "state_source", "tables"); logger.info("seed_written"); }
+      else {
+        projector.adopt(world);
+        if (!(await state.hasData(c))) { await state.write(c, world); logger.info("state_tables_backfilled"); } else state.adopt(world);
+        if (!(await meta("start"))) await setMeta(c, "start", world.start);
+      }
+      await c.query("commit");
+    }
+  } catch (e) { await c.query("rollback").catch(() => undefined); throw e; } finally { c.release(); }
+
+  const problems = reconcile(world);
+  readOnly = problems.length ? { problems } : null;
+  if (problems.length) logger.error("integrity_failed", { problems }); else logger.info("integrity_ok");
+  logger.info("world_ready", { anchor, mode, source: config.stateSource === "tables" && !fresh ? "tables" : "replay", commands });
+}
+
+/** The whole company state as plain JSON plus the log position it corresponds to, taken between commands so the two always match. */
+export function snapshot(): Promise<{ seq: number; state: Record<string, unknown> }> {
+  return serial(async () => {
+    const seq = Number((await pool.query("select coalesce(max(seq),0) n from commands")).rows[0].n);
+    const state = Object.fromEntries(Object.entries(world).map(([k, v]) => [k, v instanceof Map ? [...v] : v]));
+    return { seq, state };
+  });
+}
+
+/** One-time move of a database from replay to the state tables. Writes nothing when `dryRun`. */
+export async function migrateState(dryRun: boolean): Promise<{ commands: number; documents: number; problems: Inconsistency[]; moved: boolean }> {
+  const anchor = await meta("anchor"); if (!anchor) throw new Error("This database has no company yet; nothing to move.");
+  const stored = await meta("mode"); mode = stored === "empty" ? "empty" : "demo";
+  const { db, commands } = await buildByReplay(anchor);
+  const documents = TABLES.reduce((n, t) => n + (db[t.collection] as unknown[]).length, 0);
+  const problems = reconcile(db);
+  if (dryRun || problems.length) return { commands, documents, problems, moved: false };
   const c = await pool.connect();
   try {
-    if (fresh || !projected) { await c.query("begin"); await projector.full(c, world); await state.truncateAll(c); await state.write(c, world); await c.query("insert into meta(key,value) values ('projected','1') on conflict (key) do update set value='1'"); await c.query("commit"); logger.info("seed_written"); }
-    else {
-      projector.adopt(world);
-      // Databases made before the state tables existed: fill them once from the world just rebuilt.
-      if (!(await state.hasData(c))) { await c.query("begin"); await state.write(c, world); await c.query("commit"); logger.info("state_tables_backfilled"); }
-      else state.adopt(world);
-    }
-  } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); }
-  logger.info("world_ready", { anchor, mode, commands: log.length });
+    await c.query("begin"); await persistAll(c, db);
+    await setMeta(c, "start", db.start); await setMeta(c, "projected", "1"); await setMeta(c, "state_source", "tables"); await setMeta(c, "state_migrated_at", new Date().toISOString());
+    await c.query("commit");
+  } catch (e) { await c.query("rollback").catch(() => undefined); throw e; } finally { c.release(); }
+  return { commands, documents, problems, moved: true };
 }
 
 let chain: Promise<unknown> = Promise.resolve();
@@ -57,6 +118,7 @@ export interface ClientStamp { id?: string; at?: string; baseSeq?: number }
 /** Run one command: execute on the live state, then persist it and its effects atomically. */
 export function submit(actor: { name: string; role: Role }, type: CommandType, payload: unknown, source: "user" | "ai_proposal", stamp: ClientStamp = {}): Promise<Outcome> {
   return serial(async () => {
+    if (readOnly) return { ok: false, status: 503, error: { code: "INTEGRITY", title: "Changes are paused", detail: "The books failed an automatic consistency check, so no new changes are accepted until it is looked at.", recovery: "Tell the system administrator. Details are in GET /api/health/integrity." } } as Outcome;
     // The browser already ran this command on its own copy using the same engine; it sends its command id and time so both
     // copies produce identical ids. It also says how much of the log it had seen: if others wrote since, it must resync first.
     const head = Number((await pool.query("select coalesce(max(seq),0) as n from commands")).rows[0].n);

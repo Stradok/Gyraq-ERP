@@ -989,6 +989,11 @@ export function buildDB(anchor?: ISODate): DB {
 let base: DB | null = null;
 let anchorOverride: ISODate | null = null;
 /** Remote mode: the seed is pinned to the date the server stored, not to today. */
+/** Remote mode for a company that started empty: the server sends its state; use it as the world instead of building a seed. */
+export function adoptSnapshot(state: Record<string, unknown>, anchor: ISODate, mode: "demo" | "empty") {
+  const db = { ...state, stock: new Map(state.stock as [string, Cell][]) } as unknown as DB;
+  anchorOverride = anchor; modeOverride = mode; base = db;
+}
 /** Drop the in-memory world so the next getDB() rebuilds it from the seed (remote resync). */
 export function resetWorld() { base = null; }
 let modeOverride: "demo" | "empty" = "demo";

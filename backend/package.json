@@ -9,7 +9,8 @@
     "reset": "tsx src/cli.ts reset",
     "typecheck": "tsc --noEmit",
     "test": "tsx tests/api.test.ts",
-    "gen:schema": "tsx src/state-schema.ts sql > /tmp/state.sql"
+    "gen:schema": "tsx src/state-schema.ts sql > /tmp/state.sql",
+    "migrate:state": "tsx src/cli.ts migrate-state"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",

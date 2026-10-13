@@ -3,14 +3,19 @@ name: meridian
 services:
   db:
     image: postgres:17-alpine
+    mem_limit: 384m
+    command: ["postgres", "-c", "shared_buffers=96MB", "-c", "max_connections=30", "-c", "work_mem=4MB", "-c", "maintenance_work_mem=32MB", "-c", "effective_cache_size=256MB"]
     environment: { POSTGRES_USER: meridian, POSTGRES_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env}", POSTGRES_DB: meridian }
     ports: ["127.0.0.1:5433:5432"]   # database is reachable from this machine only
     volumes: ["pgdata:/var/lib/postgresql/data"]
+    restart: unless-stopped
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U meridian"], interval: 3s, retries: 20 }
   api:
     build: { context: ., dockerfile: backend/Dockerfile }
+    mem_limit: 640m
     depends_on: { db: { condition: service_healthy } }
     environment:
+      NODE_OPTIONS: "--max-old-space-size=448"
       DATABASE_URL: postgres://meridian:${DB_PASSWORD:?set DB_PASSWORD in .env}@db:5432/meridian
       JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -hex 32)}"
       DEMO_PASSWORD: "${DEMO_PASSWORD:-meridian-demo}"
@@ -26,8 +31,10 @@ services:
     build:
       context: ./frontend
       args: { NEXT_PUBLIC_API_URL: "${PUBLIC_API_URL:-http://localhost:4000}" }
+    mem_limit: 384m
     depends_on: { api: { condition: service_healthy } }
     environment:
+      NODE_OPTIONS: "--max-old-space-size=256"
       API_URL: http://api:4000
       AI_EDITION: "${AI_EDITION:-demo}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"

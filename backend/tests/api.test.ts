@@ -219,5 +219,55 @@ console.log("State tables (R2.2)");
   console.log("  ✓ foreign keys enforced");
 }
 
+console.log("Boot from the state tables (R2.3)");
+{
+  const { config } = await import("../src/config");
+  // Compare whole states by a fingerprint per part instead of keeping full copies: three copies of the company would not fit a 768 MB heap.
+  const { createHash } = await import("node:crypto");
+  // Canonical JSON: object keys sorted (Postgres jsonb reorders them), stock entries sorted.
+  const canon = (v: any): string => Array.isArray(v) ? `[${v.map(canon).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => JSON.stringify(k) + ":" + canon(v[k])).join(",")}}` : JSON.stringify(v) ?? "null";
+  const norm = (db: any) => Object.fromEntries(Object.entries(db).map(([k, v]) => { const x = v instanceof Map ? [...v] : v; if (k === "stock") (x as any[]).sort(([a]: any, [b]: any) => (a < b ? -1 : 1)); return [k, createHash("sha1").update(canon(x)).digest("hex")]; }));
+  const before = norm(W.world);
+  const dry = await W.migrateState(true);
+  assert.equal(dry.moved, false); assert.deepEqual(dry.problems, [], "dry run: the books are consistent");
+  const done = await W.migrateState(false); assert.equal(done.moved, true);
+  config.stateSource = "tables";
+  await W.boot();
+  assert.deepEqual(norm(W.world), before, "state rebuilt from the tables equals the state the engine had, field for field");
+  console.log(`  ✓ ${done.documents} documents + ledger + audit + stock rebuilt from tables, identical to the engine's state`);
+
+  const o = (await pool.query("select * from users where email='owner@meridian.demo'")).rows[0];
+  const { issue, pwVersion } = await import("../src/auth");
+  const tok = issue({ sub: o.id, email: o.email, name: o.name, role: o.role, emp: o.emp_name, pv: pwVersion(o.pw_hash) });
+  const mk2 = await cmd(tok, "CreateLead", { company: "Tables Mode Ltd", contact: "x", city: "Karachi", source: "web", repId: "", value: 5, probability: 10 });
+  assert.equal(mk2.status, 200, JSON.stringify(mk2.body));
+  const afterCmd = norm(W.world);
+  await W.boot();
+  assert.deepEqual(norm(W.world), afterCmd, "a command written in tables mode survives a restart with no replay");
+  assert.ok(W.world.leads.some((l) => l.company === "Tables Mode Ltd"));
+  console.log("  ✓ commands keep working in tables mode and survive a restart");
+
+  // the books checking themselves
+  await pool.query("update stock_levels set value = value + 5000 where ctid = (select ctid from stock_levels where value > 0 limit 1)");
+  await W.boot();
+  assert.ok(W.readOnly && W.readOnly.problems.some((p) => p.check === "inventory"), "tampered stock value is detected at boot");
+  const paused = await cmd(tok, "CreateLead", { company: "Should Not Save", contact: "x", city: "Karachi", source: "web", repId: "", value: 1, probability: 1 });
+  assert.equal(paused.status, 503); assert.equal(paused.body.error.code, "INTEGRITY", "commands are refused while the books disagree");
+  const integ = await call("/api/health/integrity", { token: tok }); assert.equal(integ.body.ok, false); assert.ok(integ.body.problems.length >= 1);
+  const ru = (await pool.query("select * from users where email='rep.karachi@meridian.demo'")).rows[0];
+  assert.equal((await call("/api/health/integrity", { token: issue({ sub: ru.id, email: ru.email, name: ru.name, role: ru.role, emp: ru.emp_name, pv: pwVersion(ru.pw_hash) }) })).status, 403, "only owner/admin may read the report");
+  await pool.query("update stock_levels set value = value - 5000 where ctid = (select ctid from stock_levels where value > 5000 limit 1)");
+  await W.boot(); assert.equal(W.readOnly, null, "back to normal once the data is corrected");
+  console.log("  ✓ integrity check pauses changes when the books disagree, and clears when fixed");
+  // snapshot bootstrap
+  const snapRes = await call("/api/bootstrap?snapshot=1", { token: tok });
+  assert.equal(snapRes.status, 200); assert.deepEqual(snapRes.body.commands, []);
+  const maxSeq = Number((await pool.query("select max(seq) n from commands")).rows[0].n);
+  assert.equal(snapRes.body.seq, maxSeq, "snapshot carries the log position it matches");
+  assert.deepEqual(norm(snapRes.body.state), norm(W.world), "snapshot equals the live state");
+  console.log("  ✓ GET /api/bootstrap?snapshot=1 returns the exact state and its log position");
+  config.stateSource = "replay";
+}
+
 console.log("\nAll backend checks passed.");
 srv.close(); await pool.end(); process.exit(0);

@@ -37,7 +37,8 @@ export class StateWriter {
 
   private async writeTable(c: pg.PoolClient, t: TableSpec, docs: Record<string, unknown>[]) {
     const seen = this.ensure(t.table), ids = new Set<string>(), rows: { id: string; json: string; doc: Record<string, unknown>; h: string }[] = [];
-    for (const doc of docs) {
+    // Collections the engine prepends to (newest first) are written oldest first, so insertion order (`ord`) can rebuild the array.
+    for (const doc of t.newestFirst ? [...docs].reverse() : docs) {
       const id = t.id(doc); ids.add(id);
       const json = JSON.stringify(doc), h = sha(json);
       if (seen.get(id) !== h) rows.push({ id, json, doc, h });
