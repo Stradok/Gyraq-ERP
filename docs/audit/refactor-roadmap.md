@@ -1,4 +1,21 @@
-# Refactor roadmap (for approval)
+# Refactor roadmap
+
+## Status (updated)
+| Milestone | State |
+|---|---|
+| R0 safety net and quick security fixes | done (lint clean, CI fixed, AI routes use verified identity, CSV injection, hardened compose, lockout and auth events, structured logs) |
+| R1 command permission registry | done (50 commands x 8 roles tested; rep scope fails closed) |
+| R2 Postgres tables as source of truth | done (R2.1 to R2.6) |
+| R3 exact money | done (`lib/money.ts`; see `r3-money-report.md`) |
+| R4 multi-tenancy | not started (ADR 0003) |
+| R5 module boundaries and events | not started; `touches.ts` and `permissions.ts` are the first pieces |
+| R6 configuration and customisation | partly (settings as data); numbering, currency, templates, flags not started |
+| R7 data in/out and onboarding | CSV import and opening balances done; PDF templates and real email sending not started |
+| R8 operations | installer, HTTPS, backup commands documented; monitoring and automated backups not started |
+| R9 performance | stream and static shell done; server-side pagination and read models not started |
+
+---
+
 
 Principles: keep the demo and the current backend deployable after every milestone; strangler pattern (new implementation behind an interface, switch when tests match); each milestone ends with typecheck, lint, tests and a browser check. **Gates** marked ⛔ need your explicit approval before work starts, as agreed.
 
