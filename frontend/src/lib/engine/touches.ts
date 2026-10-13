@@ -54,6 +54,8 @@ export const TOUCHES: Record<CommandType, readonly Collection[]> = {
   SetupCompany: ["audit", "company", "settings"],
   CreateWarehouse: ["audit", "warehouses"],
   PostOpeningStock: ["audit", "journal", "periodStatus", "products", "stock", "warehouses"],
+  PostOpeningReceivable: ["audit", "invoices", "journal"],
+  PostOpeningPayable: ["audit", "bills", "journal"],
   PostOpeningCash: ["audit", "journal", "periodStatus"],
   ConfirmBankMatch: ["audit", "bank"],
   SetRule: ["audit", "rules"],

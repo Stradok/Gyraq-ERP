@@ -1,8 +1,9 @@
 // Getting a real company started: profile, warehouses and opening balances. Opening entries post as "opening" journals
 // against Owner's Capital, so the books balance from day one.
+import { addDays } from "../data/dates";
 import type { Warehouse } from "../data/types";
 import { can } from "../rbac";
-import { assertPostable, audit, cell, fail, money, newId, ok, postJE, r2, type Ctx, type Result } from "./core";
+import { assertPostable, audit, cell, fail, money, newId, nextNo, ok, postJE, r2, type Ctx, type Result } from "./core";
 
 const denied = (ctx: Ctx) => (can(ctx.role, "setup.manage") ? null : fail("SETUP_FORBIDDEN", "Only the Owner or Admin can do company setup", "Setup changes the books.", "Ask the Owner."));
 
@@ -63,4 +64,41 @@ export function postOpeningCash(ctx: Ctx, p: { lines: { account: string; amount:
   postJE(ctx, "Opening cash and bank balances", "Opening balances", [...lines.map((l) => ({ account: l.account, debit: l.amount, credit: 0 })), { account: "3010", debit: 0, credit: total }], "opening");
   audit(ctx, "opening_cash.posted", "Opening balances", "cash", money(total));
   return ok({ value: total }, `Opening balances posted: ${money(total)}`);
+}
+
+/** Money a customer already owed on the start date, entered as one invoice per outstanding bill so ageing and collections work from day one. */
+export function postOpeningReceivable(ctx: Ctx, p: { customerId: string; reference: string; date: string; amount: number }): Result<{ id: string }> {
+  const d = denied(ctx) as Result<never> | null; if (d) return d;
+  const db = ctx.db, c = db.customers.find((x) => x.id === p.customerId);
+  if (!c) return fail("CUS_NOT_FOUND", "Pick a customer", "The customer must exist first.", "Add the customer, then enter what they owe.");
+  if (!(p.amount > 0)) return fail("OPN_AMOUNT", "Enter an amount above zero", "This is what the customer still owes.", "Type the outstanding amount.");
+  if (!p.reference.trim()) return fail("OPN_REF", "Add the invoice number", "Use the number on your old invoice so you can find it later.", "For example: 10442.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date) || p.date > ctx.date) return fail("OPN_DATE", "Use the original invoice date", "It must be today or earlier; it decides how overdue the amount is.", "Pick the date on the old invoice.");
+  const number = `OB-${p.reference.trim()}`;
+  if (db.invoices.some((i) => i.number === number)) return fail("OPN_DUP", "Already entered", `${number} exists.`, "Check the invoice number.");
+  const blocked = assertPostable(db, ctx.date); if (blocked) return blocked as Result<never>;
+  const amount = r2(p.amount);
+  const inv = { id: newId("inv"), number, customerId: c.id, orderId: "", warehouseId: c.warehouseId, date: p.date, dueDate: addDays(p.date, c.termsDays), lines: [], subtotal: amount, discount: 0, salesTax: 0, furtherTax: 0, wht236h: 0, total: amount, paid: 0, cogs: 0, status: "sent" as const, paymentStatus: "unpaid" as const, fbr: { status: "simulated" as const, irn: "", at: "" } };
+  db.invoices.unshift(inv);
+  postJE(ctx, `Opening receivable ${number}`, "Opening balances", [{ account: "1200", debit: amount, credit: 0 }, { account: "3010", debit: 0, credit: amount }], "opening");
+  audit(ctx, "opening_receivable.posted", "Invoice", number, `${c.name} · ${money(amount)}`);
+  return ok({ id: inv.id }, `${number} for ${c.name}: ${money(amount)} owed`);
+}
+
+/** Money owed to a supplier on the start date, one bill per outstanding supplier invoice. */
+export function postOpeningPayable(ctx: Ctx, p: { supplierId: string; reference: string; date: string; amount: number }): Result<{ id: string }> {
+  const d = denied(ctx) as Result<never> | null; if (d) return d;
+  const db = ctx.db, s = db.suppliers.find((x) => x.id === p.supplierId);
+  if (!s) return fail("SUP_NOT_FOUND", "Pick a supplier", "The supplier must exist first.", "Add the supplier, then enter what you owe.");
+  if (!(p.amount > 0)) return fail("OPN_AMOUNT", "Enter an amount above zero", "This is what you still owe the supplier.", "Type the outstanding amount.");
+  if (!p.reference.trim()) return fail("OPN_REF", "Add the supplier's invoice number", "Use the number on their invoice.", "For example: LF-23817.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date) || p.date > ctx.date) return fail("OPN_DATE", "Use the original invoice date", "It must be today or earlier; it decides when payment is due.", "Pick the date on the supplier's invoice.");
+  if (db.bills.some((b) => b.supplierId === s.id && b.supplierInvoiceNo === p.reference.trim())) return fail("OPN_DUP", "Already entered", `${s.name} invoice ${p.reference} exists.`, "Check the invoice number.");
+  const blocked = assertPostable(db, ctx.date); if (blocked) return blocked as Result<never>;
+  const amount = r2(p.amount);
+  const bill = { id: newId("bill"), number: nextNo("SB-", db.bills, 1000), supplierInvoiceNo: p.reference.trim(), supplierId: s.id, poId: null, date: p.date, dueDate: addDays(p.date, s.termsDays), lines: [{ productId: null, description: "Opening balance", qty: 1, price: amount, total: amount }], subtotal: amount, tax: 0, wht236g: 0, total: amount, paid: 0, status: "posted" as const, exceptions: [], source: "manual" as const };
+  db.bills.unshift(bill);
+  postJE(ctx, `Opening payable ${bill.number}`, "Opening balances", [{ account: "3010", debit: amount, credit: 0 }, { account: "2010", debit: 0, credit: amount }], "opening");
+  audit(ctx, "opening_payable.posted", "Supplier bill", bill.number, `${s.name} · ${money(amount)}`);
+  return ok({ id: bill.id }, `${bill.number} for ${s.name}: ${money(amount)} owed`);
 }

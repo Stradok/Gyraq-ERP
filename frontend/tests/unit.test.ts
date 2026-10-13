@@ -11,6 +11,8 @@ import { validateExtraction } from "../src/lib/ai/extract";
 import { route, edition } from "../src/lib/ai/provider";
 import { bearer, verifyCaller } from "../src/lib/ai/session";
 import { r2 } from "../src/lib/money";
+import { parseCsv } from "../src/lib/csv";
+import { plan } from "../src/lib/import";
 import { csvCell } from "../src/lib/csv";
 import { checkFigures } from "../src/lib/ai/grounding";
 import { runTool } from "../src/lib/ai/tools";
@@ -93,6 +95,12 @@ runOn(db, () => {
   let acc = 0, exact = BigInt(0); for (let k = 0; k < 200000; k++) { const c = Math.floor(rnd() * 5_000_000); exact += BigInt(c); acc = r2(acc + c / 100); }
   assert.equal(acc, Number(exact) / 100, "200,000 additions on the cent grid drift by exactly zero");
   console.log("  ✓ money: rounding matches exact decimal arithmetic; sums do not drift");
+
+  assert.deepEqual(parseCsv('a,b\r\n"x, y","he said ""hi"""\n\n1,"two\nlines"'), [["a", "b"], ["x, y", 'he said "hi"'], ["1", "two\nlines"]], "CSV quoting");
+  const p1 = plan("customers", "name,city,credit_limit\nA Mart,Lahore,\"1,000,000\"\n,Karachi,5", db);
+  assert.equal(p1.good.length, 1); assert.equal((p1.good[0]!.payload as { creditLimit: number }).creditLimit, 1_000_000, "thousands separators"); assert.equal(p1.bad[0]!.row, 3, "row numbers match the spreadsheet");
+  assert.match(plan("products", "name,supplier\nX,Nobody Ltd", db).bad[0]!.error, /import suppliers first/, "missing supplier explained");
+  console.log("  ✓ CSV import: parsing, defaults and row errors");
 
   console.log("FBR mapper on seeded invoices");
   let bad = 0;

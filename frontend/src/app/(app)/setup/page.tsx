@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Page, PageHeader, Section } from "@/components/app/page-header";
 import { Field, ProblemBox } from "@/components/app/forms";
+import { ImportCard } from "@/components/app/import-card";
 import { getDB } from "@/lib/data/queries";
 import { run } from "@/lib/engine/client";
 import type { Problem } from "@/lib/engine/core";
@@ -114,12 +115,13 @@ export default function Setup() {
           </Step>
           <Step n={5} title="Opening stock" done={done("Opening stock")}><OpeningStock /></Step>
           <Step n={6} title="Opening cash and bank" done={done("Opening cash")}><OpeningCash /></Step>
-          <Step n={7} title="Your team" done={db.employees.length > 0}>
+          <Step n={7} title="Import from a spreadsheet" done={false}><ImportCard /></Step>
+          <Step n={8} title="Your team" done={db.employees.length > 0}>
             <p className="text-[13px] text-muted-foreground">Add employees, then create sign-in accounts for the people who will use the system.</p>
             <div className="mt-3 flex gap-2"><Button size="sm" variant="outline" asChild><Link href="/employees">Employees ({db.employees.length})</Link></Button><Button size="sm" variant="outline" asChild><Link href="/settings/roles">Users and roles</Link></Button></div>
           </Step>
         </div>
-        <p className="text-xs text-muted-foreground">Customer receivables and supplier payables already owed at your start date can&apos;t be loaded here yet. Enter them as the first invoices and bills, dated before your start.</p>
+        <p className="text-xs text-muted-foreground">Money customers already owe you, and money you owe suppliers, can be loaded in step 7 as opening receivables and payables (one row per unpaid invoice).</p>
       </Page>
     </>
   );

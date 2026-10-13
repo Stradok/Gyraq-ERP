@@ -34,6 +34,15 @@ ok(run("PostOpeningCash", { lines: [{ account: "1100", amount: 750_000 }] }), "o
 assert.ok(Math.abs(tb()) < 0.01, "opening entries balance"); assert.equal(bal("1300"), 38_400); assert.equal(bal("1100"), 750_000);
 assert.equal(db.stock.get(`${prod.id}|${wh.id}`)!.on, 480);
 
+// opening receivable and payable: what was owed on the start date
+bad(run("PostOpeningReceivable", { customerId: cust.id, reference: "10442", date: "2026-10-30", amount: 25000 }), "OPN_DATE", "future date refused");
+bad(run("PostOpeningReceivable", { customerId: "nope", reference: "1", date: "2026-08-01", amount: 5 }), "CUS_NOT_FOUND", "unknown customer");
+const ob = ok<{ id: string }>(run("PostOpeningReceivable", { customerId: cust.id, reference: "10442", date: "2026-08-30", amount: 25000 }), "opening receivable");
+bad(run("PostOpeningReceivable", { customerId: cust.id, reference: "10442", date: "2026-08-30", amount: 25000 }), "OPN_DUP", "same invoice twice");
+ok(run("PostOpeningPayable", { supplierId: sup.id, reference: "LF-23817", date: "2026-09-02", amount: 80000 }), "opening payable");
+assert.equal(bal("1200"), 25000); assert.equal(bal("2010"), -80000); assert.ok(Math.abs(tb()) < 0.01);
+assert.equal(db.invoices.find((i) => i.id === ob.id)!.dueDate, "2026-09-14", "due date follows the customer's terms (15 days)");
+
 const order = ok<{ id: string }>(run("CreateOrder", { customerId: cust.id, lines: [{ productId: prod.id, cartons: 2, discPct: 0 }], mode: "confirm" }), "order");
 ok(run("PickOrder", { orderId: order.id }), "pick");
 const d = ok<{ invoiceId: string }>(run("DispatchOrder", { orderId: order.id, vehicle: "KHI-1234", driver: "Sajid" }), "dispatch");
@@ -41,7 +50,7 @@ const inv = db.invoices.find((i) => i.id === d.invoiceId)!;
 assert.ok(inv.total > 0 && inv.status !== undefined);
 ok(run("RecordPayment", { customerId: cust.id, amount: inv.total, method: "bank_transfer" } as never), "payment");
 assert.ok(Math.abs(tb()) < 0.01, "trial balance after trading");
-assert.ok(Math.abs(db.invoices.reduce((s, i) => s + i.total - i.paid, 0) - bal("1200")) < 1, "AR subledger = GL");
+assert.ok(Math.abs(db.invoices.reduce((s, i) => s + i.total - i.paid, 0) - bal("1200")) < 1, "AR subledger = GL (opening invoices included)");
 const stockVal = [...db.stock.values()].reduce((s, c) => s + c.val, 0); assert.ok(Math.abs(stockVal - bal("1300")) < 1, "stock value = GL inventory");
 runOn(db, () => undefined);
 console.log("  ✓ setup → opening balances → order → dispatch → invoice → payment, books balanced");

@@ -32,7 +32,7 @@ export const COMMAND_PERMISSIONS: Record<CommandType, Rule> = {
   DecideApproval: r("approvals.decide"),
   SubmitExpense: r("self.requests", "self"), SubmitLeave: r("self.requests", "self"),
   CreateEmployee: r("hr.manage"), UpdateEmployee: r("hr.manage"), RunPayroll: r("hr.manage"),
-  SetupCompany: r("setup.manage"), CreateWarehouse: r("setup.manage"), PostOpeningStock: r("setup.manage"), PostOpeningCash: r("setup.manage"),
+  SetupCompany: r("setup.manage"), CreateWarehouse: r("setup.manage"), PostOpeningStock: r("setup.manage"), PostOpeningCash: r("setup.manage"), PostOpeningReceivable: r("setup.manage"), PostOpeningPayable: r("setup.manage"),
   SetRule: r("setup.manage"), CreateRule: r("setup.manage"),
   QueueMessage: r("message.send"),
 };
