@@ -2,6 +2,7 @@
 import { pool } from "./db";
 import type pg from "pg";
 import { hydrate } from "./hydrate";
+import { invalidate } from "../../frontend/src/lib/data/queries";
 import { reconcile, type Inconsistency } from "./integrity";
 import { TABLES } from "./state-schema";
 import { Projector } from "./project";
@@ -14,6 +15,10 @@ import type { Problem } from "../../frontend/src/lib/engine/core";
 
 export let world: DB;
 export let mode: "demo" | "empty" = "demo";
+export let seedAnchor = ""; // the date the demo sample data was generated for; stays fixed. world.today is the real date.
+/** Business date for new work: the server clock in Asia/Karachi (FAKE_TODAY only for tests). */
+const currentDate = () => process.env.FAKE_TODAY || todayPK();
+function advanceClock() { const d = currentDate(); if (world && world.today !== d) { world.today = d; invalidate(world); } }
 const projector = new Projector();
 const state = new StateWriter();
 const ENGINE_VERSION = process.env.ENGINE_VERSION ?? process.env.GIT_SHA ?? "dev";
@@ -54,6 +59,7 @@ export async function boot() {
   const stored = await meta("mode");
   mode = stored === "empty" || stored === "demo" ? stored : config.companyMode;
   if (!stored) await pool.query("insert into meta(key,value) values ('mode',$1)", [mode]);
+  seedAnchor = anchor;
   const source = await meta("state_source");
   if (config.stateSource === "tables" && !fresh && source !== "tables") throw new Error("STATE_SOURCE=tables, but this database has not been moved to the state tables yet. Back it up, then run: pnpm migrate:state");
 
@@ -77,6 +83,7 @@ export async function boot() {
     }
   } catch (e) { await c.query("rollback").catch(() => undefined); throw e; } finally { c.release(); }
 
+  advanceClock();
   const problems = reconcile(world);
   readOnly = problems.length ? { problems } : null;
   if (problems.length) logger.error("integrity_failed", { problems }); else logger.info("integrity_ok");
@@ -113,7 +120,7 @@ let chain: Promise<unknown> = Promise.resolve();
 const serial = <T>(fn: () => Promise<T>): Promise<T> => { const p = chain.then(fn, fn); chain = p.catch(() => undefined); return p; };
 
 export type Outcome = { ok: true; rec: CommandRecord & { seq: number }; value: unknown; message?: string } | { ok: false; error: Problem; status?: number };
-export interface ClientStamp { id?: string; at?: string; baseSeq?: number }
+export interface ClientStamp { id?: string; at?: string; baseSeq?: number; date?: string }
 
 /** Run one command: execute on the live state, then persist it and its effects atomically. */
 export function submit(actor: { name: string; role: Role }, type: CommandType, payload: unknown, source: "user" | "ai_proposal", stamp: ClientStamp = {}): Promise<Outcome> {
@@ -126,7 +133,10 @@ export function submit(actor: { name: string; role: Role }, type: CommandType, p
     if (stamp.id && (await pool.query("select 1 from commands where id=$1", [stamp.id])).rowCount) return { ok: false, status: 409, error: { code: "DUPLICATE_COMMAND", title: "Already applied", detail: "This action was already saved.", recovery: "Nothing to do." } } as Outcome;
     const seq = Number((await pool.query("select nextval('command_seq') as n")).rows[0].n);
     const at = stamp.at && Math.abs(Date.parse(stamp.at) - Date.now()) < 86_400_000 ? new Date(stamp.at).toISOString() : new Date().toISOString();
-    const rec = { id: stamp.id ?? `s${seq}`, type, payload, at, date: world.today, actor: actor.name, role: actor.role, source } satisfies CommandRecord;
+    advanceClock();
+    // The browser stamps its own date so both copies compute identical documents; accepted only within a day of the server's.
+    const date = stamp.date && /^\d{4}-\d{2}-\d{2}$/.test(stamp.date) && Math.abs(Date.parse(stamp.date) - Date.parse(world.today)) <= 86_400_000 ? stamp.date : world.today;
+    const rec = { id: stamp.id ?? `s${seq}`, type, payload, at, date, actor: actor.name, role: actor.role, source } satisfies CommandRecord;
     const res = execute(world, rec);
     if (!res.ok) return { ok: false, error: res.error } as Outcome;
     const c = await pool.connect();

@@ -269,5 +269,23 @@ console.log("Boot from the state tables (R2.3)");
   config.stateSource = "replay";
 }
 
+console.log("Real clock (R2.5)");
+{
+  process.env.FAKE_TODAY = "2031-03-05";
+  const o2 = (await pool.query("select * from users where email='owner@meridian.demo'")).rows[0];
+  const { issue: iss, pwVersion: pv } = await import("../src/auth");
+  const t2 = iss({ sub: o2.id, email: o2.email, name: o2.name, role: o2.role, emp: o2.emp_name, pv: pv(o2.pw_hash) });
+  const r = await cmd(t2, "CreateLead", { company: "Future Clock Ltd", contact: "x", city: "Karachi", source: "web", repId: "", value: 1, probability: 5 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(W.world.today, "2031-03-05", "the world's date follows the server clock");
+  assert.equal(r.body.rec.date, "2031-03-05", "the command is dated by the server clock, not the seed's date");
+  const bs = await call("/api/bootstrap", { token: t2 });
+  assert.equal(bs.body.today, "2031-03-05"); assert.notEqual(bs.body.anchor, "2031-03-05", "the seed anchor stays fixed");
+  const odd = await call("/api/commands", { method: "POST", token: t2, body: JSON.stringify({ type: "CreateLead", payload: { company: "Date Stamp Ltd", contact: "x", city: "Karachi", source: "web", repId: "", value: 1, probability: 5 }, date: "2020-01-01" }) });
+  assert.equal(odd.body.rec.date, "2031-03-05", "a browser date far from the server's is ignored");
+  delete process.env.FAKE_TODAY;
+  console.log("  ✓ business dates follow the real clock; the seed anchor stays fixed");
+}
+
 console.log("\nAll backend checks passed.");
 srv.close(); await pool.end(); process.exit(0);

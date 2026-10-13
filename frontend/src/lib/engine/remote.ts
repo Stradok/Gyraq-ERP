@@ -35,7 +35,7 @@ const setOnline = (online: boolean) => { if (useSync.getState().online !== onlin
 
 const state = { lastSeq: 0, applied: new Set<string>(), flushing: false, timer: 0 as unknown as ReturnType<typeof setInterval> | 0, queue: [] as CommandRecord[] };
 type Stored = CommandRecord & { seq: number };
-type World = { anchor: string; mode?: "demo" | "empty"; seq?: number; state?: Record<string, unknown>; commands: Stored[]; session: { role: Role } };
+type World = { anchor: string; today?: string; mode?: "demo" | "empty"; seq?: number; state?: Record<string, unknown>; commands: Stored[]; session: { role: Role } };
 const auth = () => ({ "content-type": "application/json", authorization: `Bearer ${getToken() ?? ""}` });
 const saveQueue = () => { safe(() => localStorage.setItem(OUTBOX, JSON.stringify(state.queue)), undefined); useSync.setState({ pending: state.queue.length }); };
 const readQueue = (): CommandRecord[] => safe(() => JSON.parse(localStorage.getItem(OUTBOX) ?? "[]"), []);
@@ -59,6 +59,7 @@ export async function loadRemoteWorld(): Promise<"ok" | "auth" | "offline"> {
   resetWorld();
   if (b.state) adoptSnapshot(b.state, b.anchor, b.mode ?? "demo"); else setAnchor(b.anchor, b.mode ?? "demo");
   const db = getDB();
+  if (b.today) db.today = b.today; // the real date; the seed anchor above only decides which sample data to build
   state.applied = new Set(); state.lastSeq = b.seq ?? 0;
   if (!b.state) replay(db, b.commands);
   for (const c of b.commands) { state.applied.add(c.id); state.lastSeq = Math.max(state.lastSeq, c.seq); }

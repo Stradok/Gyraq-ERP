@@ -10,7 +10,7 @@ import { log } from "./log";
 import { migrate, pool } from "./db";
 import { COMMAND_PERMISSIONS, HANDLERS, PERSONAS, can, type CommandType, type Role } from "./engine";
 import { enforceScope } from "./scope";
-import { boot, commandsSince, mode, readOnly, snapshot, submit, world } from "./world";
+import { boot, commandsSince, mode, readOnly, seedAnchor, snapshot, submit, world } from "./world";
 import { compress } from "hono/compress";
 import { reconcile } from "./integrity";
 
@@ -130,8 +130,8 @@ app.get("/api/health/integrity", (c) => isAdmin(c.get("session")) ? c.json({ ok:
 // A company that started empty is served as a state snapshot (its size follows its data, not its history); the demo company is
 // cheaper to rebuild in the browser from the seed plus its few commands. `?snapshot=1` forces a snapshot.
 app.get("/api/bootstrap", async (c) => {
-  if (mode === "empty" || c.req.query("snapshot") === "1") { const snap = await snapshot(); return c.json({ anchor: world.today, mode, seq: snap.seq, state: snap.state, commands: [], session: c.get("session") }); }
-  return c.json({ anchor: world.today, mode, commands: await commandsSince(0), session: c.get("session") });
+  if (mode === "empty" || c.req.query("snapshot") === "1") { const snap = await snapshot(); return c.json({ anchor: seedAnchor, today: world.today, mode, seq: snap.seq, state: snap.state, commands: [], session: c.get("session") }); }
+  return c.json({ anchor: seedAnchor, today: world.today, mode, commands: await commandsSince(0), session: c.get("session") });
 });
 app.get("/api/commands", async (c) => c.json({ commands: await commandsSince(Number(c.req.query("since") ?? 0)) }));
 
@@ -147,7 +147,7 @@ app.post("/api/commands", async (c) => {
   if (b.source === "ai_proposal" && !can(s.role, "ai.confirm")) return c.json({ ok: false, error: { code: "FORBIDDEN", title: "Your role can't confirm AI proposals", detail: "", recovery: "Ask the Owner." } }, 403);
   const scoped = enforceScope(world, { name: s.name, role: s.role, emp: s.emp }, type, b.payload);
   if (!scoped.ok) return c.json({ ok: false, error: { code: scoped.code, title: scoped.title, detail: scoped.detail, recovery: "Ask the Owner if this should be allowed." } }, 403);
-  const out = await submit({ name: s.name, role: s.role }, type, scoped.payload, b.source === "ai_proposal" ? "ai_proposal" : "user", { id: b.id, at: b.at, baseSeq: b.baseSeq });
+  const out = await submit({ name: s.name, role: s.role }, type, scoped.payload, b.source === "ai_proposal" ? "ai_proposal" : "user", { id: b.id, at: b.at, baseSeq: b.baseSeq, date: (b as { date?: string }).date });
   return c.json(out, out.ok ? 200 : ((out.status ?? 422) as 409 | 422));
 });
 

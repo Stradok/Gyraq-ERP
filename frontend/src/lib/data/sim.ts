@@ -1008,7 +1008,8 @@ export function getDB(): DB {
   if (override) return override;
   const w = resolver?.();
   if (w) return w;
-  if (!base || base.today !== (anchorOverride ?? todayPK())) base = modeOverride === "empty" ? buildEmptyDB(anchorOverride ?? undefined) : buildDB(anchorOverride ?? undefined);
+  // Without a server (public demo) the seed follows today's date. With a server the world is built once and its date is set by the server.
+  if (!base || (anchorOverride === null && base.today !== todayPK())) base = modeOverride === "empty" ? buildEmptyDB(anchorOverride ?? undefined) : buildDB(anchorOverride ?? undefined);
   return base;
 }
 void ORG; void endOfMonth; void startOfMonth;
