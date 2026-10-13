@@ -10,15 +10,18 @@ import { log } from "./log";
 import { migrate, pool } from "./db";
 import { COMMAND_PERMISSIONS, HANDLERS, PERSONAS, can, type CommandType, type Role } from "./engine";
 import { enforceScope } from "./scope";
-import { boot, commandsSince, mode, readOnly, seedAnchor, snapshot, submit, world } from "./world";
+import { boot, commandsSince, mode, onCommit, readOnly, seedAnchor, snapshot, submit, world } from "./world";
 import { compress } from "hono/compress";
+import { secureHeaders } from "hono/secure-headers";
+import { streamSSE } from "hono/streaming";
 import { reconcile } from "./integrity";
 
 type Env = { Variables: { session: Session; rid: string } };
 const app = new Hono<Env>();
 app.use("*", cors({ origin: config.corsOrigin.includes("*") ? "*" : config.corsOrigin, allowHeaders: ["authorization", "content-type"] }));
 
-app.use("*", compress());
+app.use("*", secureHeaders());
+app.use("/api/bootstrap", compress()); // not "*": compression would buffer the live stream
 app.use("*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "Request too large." }, 413) }));
 app.use("*", async (c, next) => {
   const given = c.req.header("x-request-id"), rid = given && /^[\w-]{8,64}$/.test(given) ? given : crypto.randomUUID(), t0 = Date.now(); // a caller-chosen id is kept only if it is a plain token, so logs cannot be forged with newlines or junk
@@ -121,6 +124,24 @@ app.patch("/api/users/:id", async (c) => {
   await pool.query("update users set role=coalesce($2,role), active=coalesce($3,active), title=coalesce($4,title), pw_hash=coalesce($5,pw_hash) where id=$1", [id, b.role ?? null, b.active ?? null, b.title ?? null, b.password ? await hashPassword(b.password) : null]);
   await authEvent(c, b.password ? "password_reset" : "user_updated", true, undefined, `user ${id}: ${JSON.stringify({ role: b.role, active: b.active, title: b.title })}`, s.email);
   return c.json({ ok: true });
+});
+
+// Live updates: one idle HTTP stream per open screen. The server only says "the log is now at N"; the browser then fetches what it
+// is missing with GET /api/commands?since=. No extra protocol or library, works through proxies and Caddy, and reconnects by itself.
+// ponytail: one process pushes to its own clients only; running several API instances needs a shared bus (Postgres LISTEN/NOTIFY).
+const open = new Map<string, number>(); let openTotal = 0;
+app.get("/api/stream", (c) => {
+  const uid = c.get("session").sub;
+  if ((open.get(uid) ?? 0) >= 4 || openTotal >= 1000) return c.json({ error: "Too many open connections." }, 429);
+  open.set(uid, (open.get(uid) ?? 0) + 1); openTotal++;
+  return streamSSE(c, async (stream) => {
+    const off = onCommit((seq) => void stream.writeSSE({ event: "seq", data: String(seq) }).catch(() => undefined));
+    const ping = setInterval(() => void stream.writeSSE({ event: "ping", data: "" }).catch(() => undefined), 25_000);
+    let limit: ReturnType<typeof setTimeout>;
+    await new Promise<void>((done) => { stream.onAbort(done); limit = setTimeout(() => { void stream.close(); done(); }, 50 * 60_000); }); // 50 min: forces a reconnect, which checks the token and account again
+    clearInterval(ping); clearTimeout(limit!); off();
+    open.set(uid, (open.get(uid) ?? 1) - 1); openTotal--;
+  });
 });
 
 // Owner/Admin: run the books-agree-with-themselves checks now.

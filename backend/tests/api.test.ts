@@ -289,5 +289,25 @@ console.log("Real clock (R2.5)");
   console.log("  ✓ business dates follow the real clock; the seed anchor stays fixed");
 }
 
+console.log("Live stream");
+{
+  const o3 = (await pool.query("select * from users where email='owner@meridian.demo'")).rows[0];
+  const { issue: iss3, pwVersion: pv3 } = await import("../src/auth");
+  const t3 = iss3({ sub: o3.id, email: o3.email, name: o3.name, role: o3.role, emp: o3.emp_name, pv: pv3(o3.pw_hash) });
+  assert.equal((await fetch(A + "/api/stream")).status, 401, "the stream needs a signed-in user");
+  const ac = new AbortController();
+  const r = await fetch(A + "/api/stream", { headers: { authorization: `Bearer ${t3}` }, signal: ac.signal });
+  assert.equal(r.status, 200); assert.match(r.headers.get("content-type") ?? "", /text\/event-stream/);
+  const reader = r.body!.pipeThrough(new TextDecoderStream()).getReader();
+  const got = (async () => { let buf = ""; for (;;) { const { value, done } = await reader.read(); if (done) return ""; buf += value; if (buf.includes("event: seq")) return buf; } })();
+  const sent = await cmd(t3, "CreateLead", { company: "Stream Ltd", contact: "x", city: "Karachi", source: "web", repId: "", value: 1, probability: 5 });
+  const msg = await Promise.race([got, new Promise<string>((res) => setTimeout(() => res("timeout"), 5000))]);
+  assert.match(msg, new RegExp(`data: ${sent.body.rec.seq}`), "the stream announces the new log position right after the commit");
+  ac.abort();
+  const h = await fetch(A + "/health");
+  assert.equal(h.headers.get("x-content-type-options"), "nosniff"); assert.ok(h.headers.get("strict-transport-security") || h.headers.get("x-frame-options"), "security headers are set");
+  console.log("  ✓ live stream pushes commits; security headers present");
+}
+
 console.log("\nAll backend checks passed.");
 srv.close(); await pool.end(); process.exit(0);

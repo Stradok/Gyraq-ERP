@@ -32,6 +32,10 @@ export async function commandsSince(seq: number): Promise<(CommandRecord & { seq
   return rows.map((r) => ({ ...rowToRecord({ ...r, business_date: r.business_date }), date: r.business_date as string, seq: Number(r.seq) }));
 }
 
+const commitListeners = new Set<(seq: number) => void>();
+/** Called after every committed command with its log position (used by the live stream). */
+export const onCommit = (fn: (seq: number) => void) => { commitListeners.add(fn); return () => { commitListeners.delete(fn); }; };
+
 export let readOnly: { problems: Inconsistency[] } | null = null; // set when the books fail their own checks; commands are refused
 
 const meta = async (key: string) => (await pool.query("select value from meta where key=$1", [key])).rows[0]?.value as string | undefined;
@@ -140,6 +144,7 @@ export function submit(actor: { name: string; role: Role }, type: CommandType, p
       await projector.delta(c, world, only);
       await state.write(c, world, only);
       await c.query("commit");
+      commitListeners.forEach((f) => f(seq));
     } catch (e) {
       await c.query("rollback").catch(() => undefined);
       await boot(); // memory is ahead of the database: rebuild it from what was committed

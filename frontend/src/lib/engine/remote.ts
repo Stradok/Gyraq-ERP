@@ -100,26 +100,47 @@ export function pushCommand(rec: CommandRecord) {
   state.applied.add(rec.id); state.queue.push(rec); saveQueue(); void flush();
 }
 
-/** Pick up what other people did, and retry anything still queued. */
+/** Fetch what other people did since our last position. */
+async function pull() {
+  if (state.queue.length) { void flush(); return; }
+  if (state.flushing) return;
+  const r = await fetch(`${API}/api/commands?since=${state.lastSeq}`, { headers: auth() }).catch(() => null);
+  if (!r) { setOnline(false); return; }
+  setOnline(true);
+  if (!r.ok || state.queue.length) return;
+  const { commands } = (await r.json()) as { commands: Stored[] };
+  const fresh = commands.filter((c) => !state.applied.has(c.id));
+  const db = getDB();
+  for (const c of fresh) { execute(db, c); state.applied.add(c.id); }
+  for (const c of commands) state.lastSeq = Math.max(state.lastSeq, c.seq);
+  if (fresh.length) useWorld.getState().bump();
+}
+
+/** Live updates: the server keeps one stream open and says "the log is at N"; we then pull what we are missing. */
+async function listen() {
+  let wait = 1000;
+  for (;;) {
+    try {
+      const r = await fetch(`${API}/api/stream`, { headers: auth() });
+      if (r.status === 401) { signOut(); return; }
+      if (!r.ok || !r.body) throw new Error("stream");
+      wait = 1000; setOnline(true); void pull();
+      const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buf = "";
+      for (;;) { const { value, done } = await reader.read(); if (done) break; buf += value; let i; while ((i = buf.indexOf("\n\n")) >= 0) { const msg = buf.slice(0, i); buf = buf.slice(i + 2); if (msg.includes("event: seq")) void pull(); } }
+    } catch { setOnline(false); }
+    await new Promise((res) => setTimeout(res, wait)); wait = Math.min(wait * 2, 30_000);
+  }
+}
+
+/** Start syncing: live stream for instant updates, plus a slow timer that also retries queued changes and covers a stream that is down. */
 export function startPolling() {
   if (state.timer) return;
   window.addEventListener("online", () => void flush());
   window.addEventListener("offline", () => setOnline(false));
   state.queue = readQueue(); useSync.setState({ pending: state.queue.length }); void flush();
-  state.timer = setInterval(async () => {
-    if (state.queue.length) { void flush(); return; }
-    if (state.flushing || document.hidden) return;
-    const r = await fetch(`${API}/api/commands?since=${state.lastSeq}`, { headers: auth() }).catch(() => null);
-    if (!r) { setOnline(false); return; }
-    setOnline(true);
-    if (!r.ok || state.queue.length) return;
-    const { commands } = (await r.json()) as { commands: Stored[] };
-    const fresh = commands.filter((c) => !state.applied.has(c.id));
-    const db = getDB();
-    for (const c of fresh) { execute(db, c); state.applied.add(c.id); }
-    for (const c of commands) state.lastSeq = Math.max(state.lastSeq, c.seq);
-    if (fresh.length) useWorld.getState().bump();
-  }, 4000);
+  void listen();
+  state.timer = setInterval(() => { if (!document.hidden) void pull(); }, 20_000);
 }
 
 /** Authenticated call to the API for non-command endpoints (user management). */
