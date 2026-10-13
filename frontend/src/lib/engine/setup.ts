@@ -5,11 +5,18 @@ import type { Warehouse } from "../data/types";
 import { can } from "../rbac";
 import { assertPostable, audit, cell, fail, money, newId, nextNo, ok, postJE, r2, type Ctx, type Result } from "./core";
 
+// Input checks shared by every opening-balance command: no NaN or Infinity, no absurd sizes, real calendar dates, plain references.
+const MAX = 1e12;
+const goodAmount = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x) && x > 0 && x <= MAX;
+const goodDate = (d: unknown, today: string): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && new Date(d + "T00:00:00Z").toISOString().slice(0, 10) === d && d <= today;
+const goodRef = (r: unknown): r is string => typeof r === "string" && r.trim().length > 0 && r.trim().length <= 40 && /^[\w .\/-]+$/.test(r.trim());
+
 const denied = (ctx: Ctx) => (can(ctx.role, "setup.manage") ? null : fail("SETUP_FORBIDDEN", "Only the Owner or Admin can do company setup", "Setup changes the books.", "Ask the Owner."));
 
 export interface SetupCompany { name: string; legalName: string; ntn: string; strn: string; address: string; city: string; province: string; minCash?: number }
 export function setupCompany(ctx: Ctx, p: SetupCompany): Result {
   const d = denied(ctx); if (d) return d;
+  if ([p.name, p.legalName, p.ntn, p.strn, p.address, p.city, p.province].some((v) => typeof v !== "string" || v.length > 200)) return fail("CO_FIELDS", "A field is too long", "Each company field is limited to 200 characters.", "Shorten it.");
   if (p.name.trim().length < 2) return fail("CO_NAME", "Enter the company name", "It appears on invoices and screens.", "Type the trading name.");
   if (p.ntn && !/^\d{7}-\d$/.test(p.ntn)) return fail("CO_NTN", "NTN format looks wrong", "Use 7 digits, a dash and 1 digit, like 1234567-8.", "Check the registration certificate.");
   const c = ctx.db.company;
@@ -40,8 +47,8 @@ export function postOpeningStock(ctx: Ctx, p: { lines: { productId: string; ware
   for (const l of lines) {
     if (!db.products.some((x) => x.id === l.productId)) return fail("PRD_NOT_FOUND", "Unknown product", "A line refers to a product that doesn't exist.", "Refresh and try again.");
     if (!db.warehouses.some((x) => x.id === l.warehouseId)) return fail("WH_NOT_FOUND", "Unknown warehouse", "A line refers to a warehouse that doesn't exist.", "Create the warehouse first.");
-    if (!Number.isInteger(l.qty) || l.qty < 0) return fail("OPN_QTY", "Quantities must be whole numbers", "Opening stock can't be negative.", "Fix the quantity.");
-    if (!(l.unitCost > 0)) return fail("OPN_COST", "Enter a cost for each item", "Opening stock needs a unit cost so the books can value it.", "Type the cost per piece.");
+    if (!Number.isInteger(l.qty) || l.qty < 0 || l.qty > 1e9) return fail("OPN_QTY", "Quantities must be whole numbers", "Opening stock can't be negative.", "Fix the quantity.");
+    if (!goodAmount(l.unitCost)) return fail("OPN_COST", "Enter a cost for each item", "Opening stock needs a unit cost so the books can value it.", "Type the cost per piece.");
   }
   const blocked = assertPostable(db, ctx.date); if (blocked) return blocked as Result<never>;
   let total = 0;
@@ -57,7 +64,7 @@ export function postOpeningCash(ctx: Ctx, p: { lines: { account: string; amount:
   if (!lines.length) return fail("OPN_EMPTY", "Enter at least one balance", "Nothing to post.", "Type the cash or bank balance.");
   for (const l of lines) {
     if (!ctx.db.bankBalanceAccounts.includes(l.account)) return fail("OPN_ACCOUNT", "Pick a cash or bank account", "Opening balances here are for cash and bank accounts only.", "Choose from the list.");
-    if (!(l.amount > 0)) return fail("OPN_AMOUNT", "Balances must be above zero", "Enter the balance as at your start date.", "Fix the amount.");
+    if (!goodAmount(l.amount)) return fail("OPN_AMOUNT", "Balances must be above zero (and below one trillion)", "Enter the balance as at your start date.", "Fix the amount.");
   }
   const blocked = assertPostable(ctx.db, ctx.date); if (blocked) return blocked as Result<never>;
   const total = r2(lines.reduce((s, l) => s + l.amount, 0));
@@ -71,9 +78,9 @@ export function postOpeningReceivable(ctx: Ctx, p: { customerId: string; referen
   const d = denied(ctx) as Result<never> | null; if (d) return d;
   const db = ctx.db, c = db.customers.find((x) => x.id === p.customerId);
   if (!c) return fail("CUS_NOT_FOUND", "Pick a customer", "The customer must exist first.", "Add the customer, then enter what they owe.");
-  if (!(p.amount > 0)) return fail("OPN_AMOUNT", "Enter an amount above zero", "This is what the customer still owes.", "Type the outstanding amount.");
-  if (!p.reference.trim()) return fail("OPN_REF", "Add the invoice number", "Use the number on your old invoice so you can find it later.", "For example: 10442.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date) || p.date > ctx.date) return fail("OPN_DATE", "Use the original invoice date", "It must be today or earlier; it decides how overdue the amount is.", "Pick the date on the old invoice.");
+  if (!goodAmount(p.amount)) return fail("OPN_AMOUNT", "Enter a valid amount", "It must be a number above zero and below one trillion.", "Type the outstanding amount.");
+  if (!goodRef(p.reference)) return fail("OPN_REF", "Add a valid invoice number", "Up to 40 letters, digits, spaces and - / . characters.", "For example: 10442.");
+  if (!goodDate(p.date, ctx.date)) return fail("OPN_DATE", "Use the original invoice date", "It must be today or earlier; it decides how overdue the amount is.", "Pick the date on the old invoice.");
   const number = `OB-${p.reference.trim()}`;
   if (db.invoices.some((i) => i.number === number)) return fail("OPN_DUP", "Already entered", `${number} exists.`, "Check the invoice number.");
   const blocked = assertPostable(db, ctx.date); if (blocked) return blocked as Result<never>;
@@ -90,9 +97,9 @@ export function postOpeningPayable(ctx: Ctx, p: { supplierId: string; reference:
   const d = denied(ctx) as Result<never> | null; if (d) return d;
   const db = ctx.db, s = db.suppliers.find((x) => x.id === p.supplierId);
   if (!s) return fail("SUP_NOT_FOUND", "Pick a supplier", "The supplier must exist first.", "Add the supplier, then enter what you owe.");
-  if (!(p.amount > 0)) return fail("OPN_AMOUNT", "Enter an amount above zero", "This is what you still owe the supplier.", "Type the outstanding amount.");
-  if (!p.reference.trim()) return fail("OPN_REF", "Add the supplier's invoice number", "Use the number on their invoice.", "For example: LF-23817.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date) || p.date > ctx.date) return fail("OPN_DATE", "Use the original invoice date", "It must be today or earlier; it decides when payment is due.", "Pick the date on the supplier's invoice.");
+  if (!goodAmount(p.amount)) return fail("OPN_AMOUNT", "Enter a valid amount", "It must be a number above zero and below one trillion.", "Type the outstanding amount.");
+  if (!goodRef(p.reference)) return fail("OPN_REF", "Add a valid supplier invoice number", "Up to 40 letters, digits, spaces and - / . characters.", "For example: LF-23817.");
+  if (!goodDate(p.date, ctx.date)) return fail("OPN_DATE", "Use the original invoice date", "It must be today or earlier; it decides when payment is due.", "Pick the date on the supplier's invoice.");
   if (db.bills.some((b) => b.supplierId === s.id && b.supplierInvoiceNo === p.reference.trim())) return fail("OPN_DUP", "Already entered", `${s.name} invoice ${p.reference} exists.`, "Check the invoice number.");
   const blocked = assertPostable(db, ctx.date); if (blocked) return blocked as Result<never>;
   const amount = r2(p.amount);

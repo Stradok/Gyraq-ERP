@@ -37,6 +37,10 @@ assert.equal(db.stock.get(`${prod.id}|${wh.id}`)!.on, 480);
 // opening receivable and payable: what was owed on the start date
 bad(run("PostOpeningReceivable", { customerId: cust.id, reference: "10442", date: "2026-10-30", amount: 25000 }), "OPN_DATE", "future date refused");
 bad(run("PostOpeningReceivable", { customerId: "nope", reference: "1", date: "2026-08-01", amount: 5 }), "CUS_NOT_FOUND", "unknown customer");
+for (const amount of [Infinity, NaN, -5, 1e13, "5" as never]) bad(run("PostOpeningReceivable", { customerId: cust.id, reference: "X1", date: "2026-08-30", amount }), "OPN_AMOUNT", `amount ${String(amount)} refused`);
+bad(run("PostOpeningReceivable", { customerId: cust.id, reference: "X1", date: "2026-02-31", amount: 5 }), "OPN_DATE", "impossible calendar date refused");
+for (const reference of ["", "x".repeat(41), "<script>", {} as never]) bad(run("PostOpeningPayable", { supplierId: sup.id, reference, date: "2026-08-30", amount: 5 }), "OPN_REF", "odd reference refused");
+bad(run("PostOpeningCash", { lines: [{ account: "1100", amount: Infinity }] }), "OPN_AMOUNT", "infinite cash refused");
 const ob = ok<{ id: string }>(run("PostOpeningReceivable", { customerId: cust.id, reference: "10442", date: "2026-08-30", amount: 25000 }), "opening receivable");
 bad(run("PostOpeningReceivable", { customerId: cust.id, reference: "10442", date: "2026-08-30", amount: 25000 }), "OPN_DUP", "same invoice twice");
 ok(run("PostOpeningPayable", { supplierId: sup.id, reference: "LF-23817", date: "2026-09-02", amount: 80000 }), "opening payable");
