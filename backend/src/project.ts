@@ -1,63 +1,35 @@
-// Projection: after each command, write what changed in the in-memory business state into Postgres tables,
-// inside the same transaction as the command row. Journal and audit are append-only; documents are upserted.
+// Ledger, audit and stock tables: after each command, write what changed inside the same transaction as the command row.
+// Journal and audit are append-only. (Documents live in the typed state tables, see state.ts.)
 import { createHash } from "node:crypto";
 import type pg from "pg";
 import type { DB } from "./engine";
 
-type Doc = { id?: string; month?: string };
-const COLLECTIONS = ["warehouses", "suppliers", "products", "customers", "employees", "quotes", "orders", "invoices", "creditNotes", "payments", "pos", "grns", "bills", "supplierPayments", "stockCounts", "expenses", "leaves", "payroll", "bank", "approvals", "notifications", "leads", "shipments", "transfers", "claims", "rules", "outbox"] as const;
-const keyOf = (d: Doc) => d.id ?? d.month ?? "";
 const digest = (v: unknown) => createHash("sha1").update(JSON.stringify(v)).digest("hex");
 
-function docs(db: DB, only?: ReadonlySet<string>): Map<string, Map<string, { json: string; h: string }>> {
-  const out = new Map<string, Map<string, { json: string; h: string }>>();
-  const add = (kind: string, id: string, v: unknown) => { const json = JSON.stringify(v); (out.get(kind) ?? out.set(kind, new Map()).get(kind)!).set(id, { json, h: digest(json) }); };
-  for (const k of COLLECTIONS) if (!only || only.has(k)) for (const d of db[k] as unknown as Doc[]) add(k, keyOf(d), d);
-  if (!only || only.has("settings")) add("settings", "main", db.settings);
-  if (!only || only.has("company")) add("company", "main", db.company);
-  if (!only || only.has("periodStatus")) add("periodStatus", "main", db.periodStatus);
-  return out;
-}
-
 export class Projector {
-  private hashes = new Map<string, Map<string, string>>();
+  private accountsSynced = false;
   private journal = new Set<string>();
   private audit = new Set<string>();
   private stock = new Map<string, string>();
 
   /** Remember what is already in the database, without writing (used after a restart). */
   adopt(db: DB) {
-    this.hashes = new Map([...docs(db)].map(([k, m]) => [k, new Map([...m].map(([id, v]) => [id, v.h]))]));
     this.journal = new Set(db.journal.map((j) => j.number)); this.audit = new Set(db.audit.map((a) => a.id));
     this.stock = new Map([...db.stock].map(([k, c]) => [k, digest(c)]));
   }
 
   /** Write every row (first start, or repair). */
   async full(c: pg.PoolClient, db: DB) {
-    await c.query("truncate records, stock_levels, journal_lines, journal_entries, accounts, audit_log cascade");
-    this.hashes = new Map(); this.journal = new Set(); this.audit = new Set(); this.stock = new Map();
+    await c.query("truncate stock_levels, journal_lines, journal_entries, accounts, audit_log cascade");
+    this.accountsSynced = false; this.journal = new Set(); this.audit = new Set(); this.stock = new Map();
     await this.delta(c, db);
   }
 
   async delta(c: pg.PoolClient, db: DB, only?: ReadonlySet<string>) {
     // accounts rarely change; keep them in sync by upsert on first sight
-    if (!this.hashes.has("__accounts")) {
+    if (!this.accountsSynced) {
       await c.query("insert into accounts(code,name,type,grp) select * from unnest($1::text[],$2::text[],$3::text[],$4::text[]) on conflict (code) do update set name=excluded.name", [db.accounts.map((a) => a.code), db.accounts.map((a) => a.name), db.accounts.map((a) => a.type), db.accounts.map((a) => a.group)]);
-      this.hashes.set("__accounts", new Map());
-    }
-    // documents
-    const now = docs(db, only);
-    for (const [kind, m] of now) {
-      const prev = this.hashes.get(kind) ?? new Map<string, string>();
-      const up: [string, string][] = [];
-      for (const [id, v] of m) if (prev.get(id) !== v.h) up.push([id, v.json]);
-      for (let i = 0; i < up.length; i += 2000) {
-        const part = up.slice(i, i + 2000);
-        await c.query("insert into records(kind,id,data) select $1, * from unnest($2::text[], $3::jsonb[]) on conflict (kind,id) do update set data=excluded.data, updated_at=now()", [kind, part.map((x) => x[0]), part.map((x) => x[1])]);
-      }
-      const gone = [...prev.keys()].filter((id) => !m.has(id));
-      if (gone.length) await c.query("delete from records where kind=$1 and id = any($2)", [kind, gone]);
-      this.hashes.set(kind, new Map([...m].map(([id, v]) => [id, v.h])));
+      this.accountsSynced = true;
     }
     // ledger (append-only)
     const newJ = only && !only.has("journal") ? [] : db.journal.filter((j) => !this.journal.has(j.number));

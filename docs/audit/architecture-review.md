@@ -11,7 +11,7 @@ The codebase has one strong core (a deterministic command engine) wrapped in a p
 
 ## B. Findings
 
-### A-1 (Critical) History is recomputed by current code, not stored as facts
+### A-1 (Critical) History is recomputed by current code, not stored as facts — FIXED in R2
 `backend/src/world.ts` `boot()` rebuilds state with `buildDB(anchor)` + `replay(world, commands)` on every start. The `journal_entries`/`records` rows in Postgres are only a projection written at the time of each command. If tax, valuation, numbering or validation rules change in `lib/engine/*`, the next boot re-executes old commands under the new rules: invoice totals, document numbers and journal lines in memory can silently differ from what was stored and shown to the customer. `replay` merely `console.warn`s on rejected commands. There is no handler versioning, no snapshot, no check that replay equals the stored ledger.
 *Impact:* unacceptable for an accounting system. *Fix direction:* make Postgres tables the source of truth (state-based persistence) or snapshot + versioned handlers with a reconciliation check at boot. **Needs your decision (see roadmap R2).**
 

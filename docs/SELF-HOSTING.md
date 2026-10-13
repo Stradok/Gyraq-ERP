@@ -18,6 +18,9 @@ Demo accounts (password = `DEMO_PASSWORD`): `owner@meridian.demo`, `finance@meri
 ## Starting a real customer (blank company)
 Set `COMPANY_MODE=empty`, `OWNER_EMAIL`, `OWNER_NAME` and `OWNER_PASSWORD` in `.env` before the first start (use a fresh database: `docker compose down -v`). There is no sample data and only the Owner account exists. The Owner lands on **Getting started**: company profile, warehouses, suppliers and products, customers, opening stock, opening cash and bank balances, then the team. Opening entries post against Owner's Capital. Not covered yet: receivables and payables already owed at the start date.
 
+## Upgrading a database created before the state tables (R2)
+Back it up first: `docker compose exec db pg_dump -U meridian meridian | gzip > backup.sql.gz`. Then `pnpm --dir backend migrate:state` (dry run: prints counts and any consistency problem), and `pnpm --dir backend migrate:state --yes` to apply. A database that has not been moved refuses to start and tells you so. New databases need nothing.
+
 ## Security defaults
 - The stack **will not start** without `DB_PASSWORD` and `JWT_SECRET` (`.env.example` shows how to generate them). In production the API also refuses a JWT secret under 32 characters and `CORS_ORIGIN=*`.
 - Postgres, the API and the web app listen on `127.0.0.1` only. Put HTTPS in front with `deploy/Caddyfile`, and set `TRUST_PROXY=1` so login throttling sees real client addresses.
@@ -54,7 +57,7 @@ Set `AI_EDITION` and the matching keys in `.env`. Each task goes to the cheapest
 Override one task: `AI_PROVIDER_VISION=anthropic`, `AI_MODEL_REASONING=...`. A task whose vendor has no key falls back to one that does. Model ids change; check the vendors' model lists when onboarding a customer. Voice is not built yet.
 
 ## How the data is stored
-The command log is the source of truth and is append-only. Each command is also written into tables in the same transaction: `records` (documents as JSON), `stock_levels`, `accounts`, `journal_entries` + `journal_lines` (the database refuses an unbalanced entry and refuses edits or deletes), and `audit_log`. The server rebuilds its in-memory state from the seed plus the log on start.
+The tables are the source of truth: one typed table per kind of document (`customers`, `invoices`, `sales_orders`, ... with real foreign keys), plus `stock_levels`, `journal_entries` + `journal_lines` (the database refuses an unbalanced entry and refuses edits or deletes) and `audit_log`. Every command is also kept in the append-only `commands` table with the engine version that ran it, and is never re-executed. On start the server reads the tables, checks that the books agree (trial balance, receivables, inventory) and pauses changes if they do not (`GET /api/health/integrity`).
 
 ## Limits to know about
 - One API instance only (state lives in its memory). Fine for one company; scaling out needs a shared cache.

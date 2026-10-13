@@ -60,34 +60,27 @@ export async function boot() {
   mode = stored === "empty" || stored === "demo" ? stored : config.companyMode;
   if (!stored) await pool.query("insert into meta(key,value) values ('mode',$1)", [mode]);
   seedAnchor = anchor;
-  const source = await meta("state_source");
-  if (config.stateSource === "tables" && !fresh && source !== "tables") throw new Error("STATE_SOURCE=tables, but this database has not been moved to the state tables yet. Back it up, then run: pnpm migrate:state");
+  if (!fresh && (await meta("state_source")) !== "tables") throw new Error("This database predates the state tables. Back it up (pg_dump), then run: pnpm migrate:state --yes");
 
-  const c = await pool.connect();
-  let commands = 0;
-  try {
-    if (config.stateSource === "tables" && !fresh) {
-      world = await hydrate(pool, anchor, (await meta("start")) ?? anchor);
-      projector.adopt(world); state.adopt(world);
-    } else {
-      const built = await buildByReplay(anchor); world = built.db; commands = built.commands;
-      const projected = await meta("projected");
-      await c.query("begin");
-      if (fresh || !projected) { await persistAll(c, world); await setMeta(c, "projected", "1"); await setMeta(c, "start", world.start); if (config.stateSource === "tables") await setMeta(c, "state_source", "tables"); logger.info("seed_written"); }
-      else {
-        projector.adopt(world);
-        if (!(await state.hasData(c))) { await state.write(c, world); logger.info("state_tables_backfilled"); } else state.adopt(world);
-        if (!(await meta("start"))) await setMeta(c, "start", world.start);
-      }
-      await c.query("commit");
-    }
-  } catch (e) { await c.query("rollback").catch(() => undefined); throw e; } finally { c.release(); }
+  if (fresh) {
+    // A new company: the sample data (demo) or an empty company, written to the tables once. From then on the tables are the truth.
+    world = mode === "empty" ? buildEmptyDB(anchor) : buildDB(anchor);
+    const c = await pool.connect();
+    try {
+      await c.query("begin"); await persistAll(c, world);
+      await setMeta(c, "start", world.start); await setMeta(c, "state_source", "tables"); await setMeta(c, "projected", "1");
+      await c.query("commit"); logger.info("company_created", { mode });
+    } catch (e) { await c.query("rollback").catch(() => undefined); throw e; } finally { c.release(); }
+  } else {
+    world = await hydrate(pool, anchor, (await meta("start")) ?? anchor);
+    projector.adopt(world); state.adopt(world);
+  }
 
   advanceClock();
   const problems = reconcile(world);
   readOnly = problems.length ? { problems } : null;
   if (problems.length) logger.error("integrity_failed", { problems }); else logger.info("integrity_ok");
-  logger.info("world_ready", { anchor, mode, source: config.stateSource === "tables" && !fresh ? "tables" : "replay", commands });
+  logger.info("world_ready", { anchor, mode });
 }
 
 /** The whole company state as plain JSON plus the log position it corresponds to, taken between commands so the two always match. */
@@ -120,7 +113,7 @@ let chain: Promise<unknown> = Promise.resolve();
 const serial = <T>(fn: () => Promise<T>): Promise<T> => { const p = chain.then(fn, fn); chain = p.catch(() => undefined); return p; };
 
 export type Outcome = { ok: true; rec: CommandRecord & { seq: number }; value: unknown; message?: string } | { ok: false; error: Problem; status?: number };
-export interface ClientStamp { id?: string; at?: string; baseSeq?: number; date?: string }
+export interface ClientStamp { id?: string; baseSeq?: number } // the browser's own at/date are ignored (see submit)
 
 /** Run one command: execute on the live state, then persist it and its effects atomically. */
 export function submit(actor: { name: string; role: Role }, type: CommandType, payload: unknown, source: "user" | "ai_proposal", stamp: ClientStamp = {}): Promise<Outcome> {
@@ -132,10 +125,10 @@ export function submit(actor: { name: string; role: Role }, type: CommandType, p
     if (stamp.baseSeq !== undefined && stamp.baseSeq < head) return { ok: false, status: 409, error: { code: "STALE", title: "Someone else changed the data", detail: "Your screen was behind the latest changes.", recovery: "Your view has been refreshed. Please try again." } } as Outcome;
     if (stamp.id && (await pool.query("select 1 from commands where id=$1", [stamp.id])).rowCount) return { ok: false, status: 409, error: { code: "DUPLICATE_COMMAND", title: "Already applied", detail: "This action was already saved.", recovery: "Nothing to do." } } as Outcome;
     const seq = Number((await pool.query("select nextval('command_seq') as n")).rows[0].n);
-    const at = stamp.at && Math.abs(Date.parse(stamp.at) - Date.now()) < 86_400_000 ? new Date(stamp.at).toISOString() : new Date().toISOString();
     advanceClock();
-    // The browser stamps its own date so both copies compute identical documents; accepted only within a day of the server's.
-    const date = stamp.date && /^\d{4}-\d{2}-\d{2}$/.test(stamp.date) && Math.abs(Date.parse(stamp.date) - Date.parse(world.today)) <= 86_400_000 ? stamp.date : world.today;
+    // Time and business date are the server's alone. A browser's idea of either is never trusted: a person must not be able to
+    // post into yesterday's (possibly closed) period or forge when something happened.
+    const at = new Date().toISOString(), date = world.today;
     const rec = { id: stamp.id ?? `s${seq}`, type, payload, at, date, actor: actor.name, role: actor.role, source } satisfies CommandRecord;
     const res = execute(world, rec);
     if (!res.ok) return { ok: false, error: res.error } as Outcome;

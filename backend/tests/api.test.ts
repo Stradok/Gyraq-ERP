@@ -41,7 +41,7 @@ assert.equal((await cmd(rep, "CreatePO", {})).status, 403, "rep can't create a P
 assert.equal((await cmd(fin, "CreateEmployee", {})).status, 422, "finance may try; the engine validates");
 assert.equal((await cmd(rep, "CreateEmployee", {})).status, 403, "rep can't manage employees");
 assert.equal((await call("/api/commands", { method: "POST", token: owner, body: JSON.stringify({ type: "Nope" }) })).status, 400);
-const prod = (await pool.query("select id from records where kind='products' order by id limit 1")).rows[0].id as string;
+const prod = (await pool.query("select id from products order by id limit 1")).rows[0].id as string;
 const t0 = Date.now();
 const ord = await cmd(owner, "CreateOrder", { customerId: custId, lines: [{ productId: prod, cartons: 2, discPct: 0 }], mode: "confirm" });
 assert.ok(ord.body.ok, JSON.stringify(ord.body));
@@ -57,7 +57,7 @@ assert.equal(first.status, 200, JSON.stringify(first.body)); assert.equal(first.
 assert.equal((await call("/api/commands", { method: "POST", token: owner, body: JSON.stringify({ type: "CreateLead", payload: lead, id: "c-lead-12345", baseSeq: head + 5 }) })).status, 409, "same command id is not applied twice");
 console.log("  ✓ stale clients rejected, client ids kept, no double-apply");
 
-const emp = (await pool.query("select data->>'name' as n from records where kind='employees' order by id limit 1")).rows[0].n as string;
+const emp = (await pool.query("select name as n from employees order by id limit 1")).rows[0].n as string;
 assert.equal((await call("/api/users", { token: rep })).status, 403, "rep can't list users");
 const mk = (b: object) => call("/api/users", { method: "POST", token: owner, body: JSON.stringify(b) });
 assert.equal((await mk({ email: "new@x.com", name: "New Person", role: "rep", password: "short", emp })).status, 400, "weak password");
@@ -113,8 +113,8 @@ assert.equal(prod({ JWT_SECRET: "x".repeat(40), CORS_ORIGIN: "https://a.com", DE
 console.log("  ✓ lockout, security events, production config guards");
 
 console.log("Postgres state");
-const row = (await pool.query("select data from records where kind='customers' and id=$1", [custId])).rows[0];
-assert.equal(row.data.name, "API Test Mart", "projected into records");
+const row = (await pool.query("select data from customers where id=$1", [custId])).rows[0];
+assert.equal(row.data.name, "API Test Mart", "saved in the customers table");
 const n = (await pool.query("select count(*)::int as n from commands")).rows[0].n; assert.equal(n, 3, "only successful commands are stored");
 const tot = (await pool.query("select sum(debit) d, sum(credit) c from journal_lines")).rows[0]; assert.ok(Math.abs(tot.d - tot.c) < 0.01, "ledger balances in SQL");
 await assert.rejects(pool.query("update journal_lines set debit = debit + 1 where line_no = 1"), /append-only/, "ledger is append-only");
@@ -122,7 +122,7 @@ await assert.rejects(pool.query("delete from commands"), /append-only/, "command
 const bad = await pool.connect();
 await bad.query("begin"); await bad.query("insert into journal_entries values ('JE-BAD', '2026-01-01', 'x', 'x', 'manual', 'test')"); await bad.query("insert into journal_lines values ('JE-BAD', 1, '1100', 100, 0)");
 await assert.rejects(bad.query("commit"), /not balanced/, "database refuses an unbalanced entry"); bad.release();
-const ordRow = (await pool.query("select data from records where kind='orders' and data->>'customerId'=$1", [custId])).rows[0];
+const ordRow = (await pool.query("select data from sales_orders where customer_id=$1", [custId])).rows[0];
 assert.ok(ordRow && ordRow.data.status !== "draft", "order projected and reserved");
 console.log("  ✓ projection, append-only ledger, balanced-entry constraint");
 
@@ -228,10 +228,12 @@ console.log("Boot from the state tables (R2.3)");
   const canon = (v: any): string => Array.isArray(v) ? `[${v.map(canon).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => JSON.stringify(k) + ":" + canon(v[k])).join(",")}}` : JSON.stringify(v) ?? "null";
   const norm = (db: any) => Object.fromEntries(Object.entries(db).map(([k, v]) => { const x = v instanceof Map ? [...v] : v; if (k === "stock") (x as any[]).sort(([a]: any, [b]: any) => (a < b ? -1 : 1)); return [k, createHash("sha1").update(canon(x)).digest("hex")]; }));
   const before = norm(W.world);
+  // A database that predates the state tables has its command log but no table data. Simulate it, then move it.
   const dry = await W.migrateState(true);
   assert.equal(dry.moved, false); assert.deepEqual(dry.problems, [], "dry run: the books are consistent");
+  await pool.query("truncate state_singletons, customers cascade"); await pool.query("delete from meta where key='state_source'");
+  await assert.rejects(W.boot(), /predates the state tables/, "an unmigrated database refuses to start");
   const done = await W.migrateState(false); assert.equal(done.moved, true);
-  config.stateSource = "tables";
   await W.boot();
   assert.deepEqual(norm(W.world), before, "state rebuilt from the tables equals the state the engine had, field for field");
   console.log(`  ✓ ${done.documents} documents + ledger + audit + stock rebuilt from tables, identical to the engine's state`);
@@ -266,7 +268,6 @@ console.log("Boot from the state tables (R2.3)");
   assert.equal(snapRes.body.seq, maxSeq, "snapshot carries the log position it matches");
   assert.deepEqual(norm(snapRes.body.state), norm(W.world), "snapshot equals the live state");
   console.log("  ✓ GET /api/bootstrap?snapshot=1 returns the exact state and its log position");
-  config.stateSource = "replay";
 }
 
 console.log("Real clock (R2.5)");
@@ -281,8 +282,9 @@ console.log("Real clock (R2.5)");
   assert.equal(r.body.rec.date, "2031-03-05", "the command is dated by the server clock, not the seed's date");
   const bs = await call("/api/bootstrap", { token: t2 });
   assert.equal(bs.body.today, "2031-03-05"); assert.notEqual(bs.body.anchor, "2031-03-05", "the seed anchor stays fixed");
-  const odd = await call("/api/commands", { method: "POST", token: t2, body: JSON.stringify({ type: "CreateLead", payload: { company: "Date Stamp Ltd", contact: "x", city: "Karachi", source: "web", repId: "", value: 1, probability: 5 }, date: "2020-01-01" }) });
-  assert.equal(odd.body.rec.date, "2031-03-05", "a browser date far from the server's is ignored");
+  const odd = await call("/api/commands", { method: "POST", token: t2, body: JSON.stringify({ type: "CreateLead", payload: { company: "Date Stamp Ltd", contact: "x", city: "Karachi", source: "web", repId: "", value: 1, probability: 5 }, date: "2020-01-01", at: "2020-01-01T00:00:00Z" }) });
+  assert.equal(odd.body.rec.date, "2031-03-05", "the browser's date is ignored"); assert.ok(odd.body.rec.at.startsWith(new Date().toISOString().slice(0, 4)), "the browser's timestamp is ignored");
+  for (const bad of [{ id: ["abcdef12"] }, { baseSeq: "5" }, { baseSeq: 1.5 }, { source: "root" }, { type: ["CreateLead"] }]) assert.equal((await call("/api/commands", { method: "POST", token: t2, body: JSON.stringify({ type: "CreateLead", payload: {}, ...bad }) })).status, 400, `rejected: ${JSON.stringify(bad)}`);
   delete process.env.FAKE_TODAY;
   console.log("  ✓ business dates follow the real clock; the seed anchor stays fixed");
 }

@@ -138,7 +138,7 @@ app.get("/api/commands", async (c) => c.json({ commands: await commandsSince(Num
 app.post("/api/commands", async (c) => {
   const s = c.get("session");
   const b = await c.req.json<{ type?: string; payload?: unknown; source?: "user" | "ai_proposal"; id?: string; at?: string; baseSeq?: number }>().catch(() => ({} as { type?: string; payload?: unknown; source?: "user" | "ai_proposal"; id?: string; at?: string; baseSeq?: number }));
-  if (b.id !== undefined && !/^[\w-]{6,64}$/.test(b.id)) return c.json({ ok: false, error: { code: "BAD_ID", title: "Bad command id", detail: "", recovery: "Refresh the page." } }, 400);
+  if (typeof b.type !== "string" || (b.id !== undefined && (typeof b.id !== "string" || !/^[\w-]{6,64}$/.test(b.id))) || (b.baseSeq !== undefined && !Number.isSafeInteger(b.baseSeq)) || (b.source !== undefined && b.source !== "user" && b.source !== "ai_proposal")) return c.json({ ok: false, error: { code: "BAD_ID", title: "Bad command id", detail: "", recovery: "Refresh the page." } }, 400);
   if (!b.type || !(b.type in HANDLERS)) return c.json({ ok: false, error: { code: "CMD_UNKNOWN", title: "Unknown action", detail: `No such command: ${b.type}`, recovery: "Refresh the page." } }, 400);
   const type = b.type as CommandType;
   // Default-deny: a command with no entry in COMMAND_PERMISSIONS (frontend/src/lib/engine/permissions.ts) is refused.
@@ -147,7 +147,7 @@ app.post("/api/commands", async (c) => {
   if (b.source === "ai_proposal" && !can(s.role, "ai.confirm")) return c.json({ ok: false, error: { code: "FORBIDDEN", title: "Your role can't confirm AI proposals", detail: "", recovery: "Ask the Owner." } }, 403);
   const scoped = enforceScope(world, { name: s.name, role: s.role, emp: s.emp }, type, b.payload);
   if (!scoped.ok) return c.json({ ok: false, error: { code: scoped.code, title: scoped.title, detail: scoped.detail, recovery: "Ask the Owner if this should be allowed." } }, 403);
-  const out = await submit({ name: s.name, role: s.role }, type, scoped.payload, b.source === "ai_proposal" ? "ai_proposal" : "user", { id: b.id, at: b.at, baseSeq: b.baseSeq, date: (b as { date?: string }).date });
+  const out = await submit({ name: s.name, role: s.role }, type, scoped.payload, b.source === "ai_proposal" ? "ai_proposal" : "user", { id: b.id, baseSeq: b.baseSeq });
   return c.json(out, out.ok ? 200 : ((out.status ?? 422) as 409 | 422));
 });
 
