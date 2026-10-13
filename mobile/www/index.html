@@ -7,14 +7,20 @@ p{margin:0;color:#9a9a9a}#e{color:#ff7a7a;min-height:1.2em}</style></head>
 <body><form id="f"><h1 style="margin:0;font-size:1.3rem">Meridian ERP</h1>
 <p>Enter the address of your company's Meridian server. You will sign in with your own account.</p>
 <input id="u" type="url" inputmode="url" placeholder="https://erp.yourcompany.com" autocomplete="off">
+<label id="c" style="display:none;gap:.5rem;font-size:.9rem"><input id="ok" type="checkbox" style="width:auto"> <span id="ct"></span></label>
 <button>Connect</button><p id="e"></p></form>
 <script>
 // Real build: remember the company's server address once, then open it. "?reset=1" (from the sign-in page's "Change server" link) clears it.
 var KEY = "meridian-server", q = new URLSearchParams(location.search);
 if (q.get("reset")) localStorage.removeItem(KEY);
-function origin(v) { try { var x = new URL(v.trim()); return x.protocol === "https:" ? x.origin : null; } catch (e) { return null; } }
+// https only, no embedded user:password, no IP-address hosts. The person must confirm the exact host before it is saved.
+function origin(v) { try { var x = new URL(v.trim()); return x.protocol === "https:" && !x.username && !x.password && !/^[\d.]+$|^\[/.test(x.hostname) ? x.origin : null; } catch (e) { return null; } }
 var saved = origin(localStorage.getItem(KEY) || "");
 if (saved) location.replace(saved + "/login");
-document.getElementById("f").onsubmit = function (ev) { ev.preventDefault(); var o = origin(document.getElementById("u").value);
-  if (!o) { document.getElementById("e").textContent = "Enter an https:// address."; return; } localStorage.setItem(KEY, o); location.replace(o + "/login"); };
+document.getElementById("f").onsubmit = function (ev) { ev.preventDefault(); var o = origin(document.getElementById("u").value), e = document.getElementById("e");
+  if (!o) { e.textContent = "Enter a company address such as https://erp.yourcompany.com"; return; }
+  var c = document.getElementById("c"), ok = document.getElementById("ok");
+  if (c.style.display === "none") { document.getElementById("ct").textContent = "I trust " + new URL(o).host + " and want to sign in there."; c.style.display = "flex"; e.textContent = "Check the address, tick the box, then press Connect."; return; }
+  if (!ok.checked) { e.textContent = "Tick the box to confirm."; return; }
+  localStorage.setItem(KEY, o); location.replace(o + "/login"); };
 </script></body></html>
