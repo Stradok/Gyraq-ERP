@@ -1,0 +1,41 @@
+name: Android APK
+# Builds two installable APKs on GitHub's machines (nothing runs on your PC). Run from the Actions tab or push a tag like v1.0.0.
+#   meridian-demo.apk  opens the public demo (fake seeded company, works offline after the first open)
+#   meridian-real.apk  starts on a setup screen: enter your company's server address, then sign in
+# Debug-signed so it installs right away ("allow unknown sources"). A Play Store release needs your own signing key (docs/DEPLOY.md).
+on:
+  workflow_dispatch:
+  push: { tags: ["v*"] }
+jobs:
+  apk:
+    strategy:
+      fail-fast: false
+      matrix: { flavor: [demo, real] }
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: mobile } }
+    env:
+      DEMO_URL: https://www.gyraq.com/products/erp/distribution/overview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm install
+      - name: Capacitor config for this flavor
+        run: |
+          if [ "${{ matrix.flavor }}" = "demo" ]; then
+            node -e 'const u=new URL(process.env.DEMO_URL);require("fs").writeFileSync("capacitor.config.json",JSON.stringify({appId:"com.gyraq.meridian.demo",appName:"Meridian Demo",webDir:"www",server:{url:process.env.DEMO_URL,androidScheme:"https",allowNavigation:[u.hostname]}}))'
+          else
+            # allowNavigation "*": the real app must be able to open whatever https server the company enters; no native plugins are installed, so pages get no device access beyond the camera permission
+            echo '{"appId":"com.gyraq.meridian","appName":"Meridian ERP","webDir":"www","server":{"androidScheme":"https","allowNavigation":["*"]}}' > capacitor.config.json
+          fi
+      - run: npx cap add android
+      - name: Allow the camera (barcode scanning)
+        run: sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <application#' android/app/src/main/AndroidManifest.xml
+      - run: npx cap sync android
+      - run: ./gradlew assembleDebug --no-daemon
+        working-directory: mobile/android
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk meridian-${{ matrix.flavor }}.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: "meridian-${{ matrix.flavor }}-apk", path: "mobile/meridian-${{ matrix.flavor }}.apk", if-no-files-found: error }

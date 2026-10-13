@@ -8,10 +8,12 @@ const path = require("node:path");
 const SETUP = pathToFileURL(path.join(__dirname, "setup.html")).href;
 const cfgFile = () => path.join(app.getPath("userData"), "server.json");
 const asOrigin = (u) => { try { const x = new URL(u); return x.protocol === "https:" || (x.protocol === "http:" && x.hostname === "localhost") ? x.origin : null; } catch { return null; } };
-const readOrigin = () => { try { return asOrigin(JSON.parse(fs.readFileSync(cfgFile(), "utf8")).url); } catch { return null; } };
+// The demo installer ships a defaults.json with the demo address; the real installer ships none and starts on the setup page.
+const bundled = (() => { try { return asOrigin(JSON.parse(fs.readFileSync(path.join(__dirname, "defaults.json"), "utf8")).url); } catch { return null; } })();
+const readOrigin = () => { if (bundled) return bundled; try { return asOrigin(JSON.parse(fs.readFileSync(cfgFile(), "utf8")).url); } catch { return null; } };
 const sameOrigin = (u, origin) => origin !== null && asOrigin(u) === origin; // null never matches anything
 
-function show(win) { const o = readOrigin(); if (o) win.loadURL(o + "/login"); else win.loadURL(SETUP); }
+function show(win) { const o = readOrigin(); if (o) win.loadURL(bundled ? o + "/products/erp/distribution/overview" : o + "/login"); else win.loadURL(SETUP); }
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -45,7 +47,7 @@ ipcMain.handle("save-server", (e, raw) => {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: "Meridian", submenu: [
-    { label: "Change server…", click: () => { try { fs.unlinkSync(cfgFile()); } catch { /* none saved */ } BrowserWindow.getAllWindows().forEach(show); } },
+    ...(bundled ? [] : [{ label: "Change server…", click: () => { try { fs.unlinkSync(cfgFile()); } catch { /* none saved */ } BrowserWindow.getAllWindows().forEach(show); } }]),
     { role: "reload" }, { role: "quit" },
   ] }]));
   createWindow();

@@ -1,0 +1,7 @@
+{
+  "name": "meridian-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android wrapper for Meridian ERP (built in CI, see .github/workflows/android.yml)",
+  "dependencies": { "@capacitor/android": "^6.1.0", "@capacitor/cli": "^6.1.0", "@capacitor/core": "^6.1.0" }
+}

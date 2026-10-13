@@ -19,6 +19,8 @@ export default function Login() {
         <Input aria-label="Password" type="password" autoComplete="current-password" placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} />
         {err && <p role="alert" className="text-sm text-danger">{err}</p>}
         <Button type="submit" className="w-full" disabled={busy || !email || !pw}>{busy ? "Signing in…" : "Sign in"}</Button>
+        {/* Inside the Android app (real build) the server address is chosen on a local setup page; this link goes back to it. */}
+        {typeof window !== "undefined" && (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.() && <a href="https://localhost/?reset=1" className="block text-xs text-muted-foreground underline">Change server</a>}
         <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Demo accounts</summary><ul className="mt-2 space-y-1">{PERSONAS.map((p) => <li key={p.role}><button type="button" className="hover:text-foreground" onClick={() => setEmail(p.email)}>{p.title}: {p.email}</button></li>)}</ul></details>
       </form>
     </main>
